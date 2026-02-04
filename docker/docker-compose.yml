@@ -1,6 +1,9 @@
 # schedule-assistant/docker/docker-compose.yml
 
 services:
+  # ==========================================================================
+  # PostgreSQL Database
+  # ==========================================================================
   postgres:
     image: postgres:16-alpine
     container_name: schedule-assistant-db
@@ -19,6 +22,77 @@ services:
       timeout: 5s
       retries: 5
 
+  # ==========================================================================
+  # Backend API (FastAPI)
+  # ==========================================================================
+  backend:
+    build:
+      context: ../apps/backend
+      dockerfile: Dockerfile
+    container_name: schedule-assistant-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/schedule_assistant
+      APP_NAME: Schedule Assistant
+      DEBUG: "true"
+      SECRET_KEY: docker-secret-key-change-in-production
+      CORS_ORIGINS: http://localhost:3000
+      DEFAULT_TIMEZONE: Asia/Bangkok
+      AGENT_LLM_PROVIDER: ollama
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: llama3.2
+      PROLOG_MODE: subprocess
+      PROLOG_PATH: /app/prolog
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../apps/prolog:/app/prolog:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================================================
+  # Ollama (Local LLM) - Optional
+  # ==========================================================================
+  # Uncomment to run Ollama in Docker (requires GPU or CPU mode)
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: schedule-assistant-ollama
+  #   restart: unless-stopped
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+  #   # Uncomment for GPU support (NVIDIA)
+  #   # deploy:
+  #   #   resources:
+  #   #     reservations:
+  #   #       devices:
+  #   #         - driver: nvidia
+  #   #           count: 1
+  #   #           capabilities: [gpu]
+
+  # ==========================================================================
+  # Prolog Service - Optional (alternative to subprocess mode)
+  # ==========================================================================
+  # prolog:
+  #   image: swipl:stable
+  #   container_name: schedule-assistant-prolog
+  #   restart: unless-stopped
+  #   working_dir: /app
+  #   command: ["swipl", "--port=8081", "main.pl"]
+  #   ports:
+  #     - "8081:8081"
+  #   volumes:
+  #     - ../apps/prolog:/app:ro
+
 volumes:
   postgres_data:
     driver: local
+  # ollama_data:
+  #   driver: local

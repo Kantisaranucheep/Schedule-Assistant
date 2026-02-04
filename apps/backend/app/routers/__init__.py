@@ -6,6 +6,7 @@ from app.routers.calendars import router as calendars_router
 from app.routers.events import router as events_router
 from app.routers.chat import router as chat_router
 from app.routers.settings import router as settings_router
+from app.routers.agent import router as agent_router
 
 __all__ = [
     "health_router",
@@ -13,4 +14,5 @@ __all__ = [
     "events_router",
     "chat_router",
     "settings_router",
+    "agent_router",
 ]
