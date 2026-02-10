@@ -14,6 +14,7 @@ export const RAINBOW = [
 ];
 
 export function pad(n: number) { return String(n).padStart(2, "0"); }
+
 export function keyOf(d: Date) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
 
 export function minutesToLabel(mins: number) {
