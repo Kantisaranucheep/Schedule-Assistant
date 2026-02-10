@@ -1,0 +1,9 @@
+:root {
+  --accent: #ff6a2b;
+  --shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  --cal-line: #e7e7ea;
+}
+
+html, body {
+  height: 100%;
+}
