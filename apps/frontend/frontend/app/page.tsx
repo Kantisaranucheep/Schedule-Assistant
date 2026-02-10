@@ -37,17 +37,17 @@ import ChatModal from "./components/Modals/ChatModal";
 import EventModal from "./components/Modals/EventModal";
 
 export default function Home() {
-  // Month view default: Feb 2026
-  const [viewYear, setViewYear] = useState(2026);
-  const [viewMonth, setViewMonth] = useState(1);
+  // Month view default: current month
+  const [viewYear, setViewYear] = useState(new Date().getFullYear());
+  const [viewMonth, setViewMonth] = useState(new Date().getMonth());
 
   // Sidebar "today"
-  const TODAY = useMemo(() => new Date(2026, 1, 2), []);
+  const TODAY = useMemo(() => new Date(), []);
 
   // ===== Day/Month mode =====
   const [viewMode, setViewMode] = useState<"month" | "day">("month");
   const [selectedDay, setSelectedDay] = useState<string>(
-    keyOf(new Date(2026, 1, 2))
+    keyOf(new Date())
   );
 
   // ===== HotKeys overlay =====
@@ -506,6 +506,24 @@ export default function Home() {
         setMEnd(mStart);
         return;
       }
+
+      if (endMinVal - startMinVal < 5) {
+        alert("Event duration must be at least 5 minutes.");
+        return;
+      }
+
+      // Conflict Check
+      const existingOnDay = events[mDate] || [];
+      const conflict = existingOnDay.find(ex => {
+        if (ex.allDay) return false;
+        // Overlap: (start1 < end2) && (end1 > start2)
+        return (startMinVal < (ex.endMin ?? 0)) && (endMinVal > (ex.startMin ?? 0));
+      });
+
+      if (conflict) {
+        alert(`Time conflict! You cannot have multiple tasks at the same time (overlaps with "${conflict.title}").`);
+        return;
+      }
     }
 
     const newItem: Ev = {
@@ -568,6 +586,10 @@ export default function Home() {
           onChatClick={() => setChatOpen(true)}
           onProfileClick={() => { }}
           onLogoClick={goToToday}
+          onEventClick={(dateKey) => {
+            setSelectedDay(dateKey);
+            setViewMode("day");
+          }}
         />
 
         {/* MAIN */}
@@ -699,6 +721,7 @@ export default function Home() {
             prettyDate={prettyDate}
             realTodayKey={realTodayKey}
             isTodaySelected={isTodaySelected}
+            events={events}
           />
         </main>
       </div>

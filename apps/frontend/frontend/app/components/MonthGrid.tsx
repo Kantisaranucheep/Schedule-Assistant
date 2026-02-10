@@ -86,7 +86,11 @@ export default function MonthGrid({ cells, onSelectDay, setViewMode }: MonthGrid
                                 c.muted ? "bg-light text-muted" : "bg-white",
                                 c.isToday ? "bg-primary bg-opacity-10 shadow-inset" : "",
                             ].join(" ")}
-                            style={{ minHeight: 80, cursor: "pointer" }}
+                            style={{
+                                minHeight: 80,
+                                cursor: "pointer",
+                                borderTop: c.isToday ? "3px solid var(--bs-primary)" : undefined
+                            }}
                             onClick={() => {
                                 onSelectDay(c.key);
                                 setViewMode("day");

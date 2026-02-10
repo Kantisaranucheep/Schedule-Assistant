@@ -11,6 +11,7 @@ interface SidebarProps {
     onChatClick: () => void;
     onProfileClick: () => void;
     onLogoClick: () => void;
+    onEventClick: (dateKey: string) => void;
 }
 
 export default function Sidebar({
@@ -22,6 +23,7 @@ export default function Sidebar({
     onChatClick,
     onProfileClick,
     onLogoClick,
+    onEventClick,
 }: SidebarProps) {
     return (
         <aside
@@ -29,19 +31,21 @@ export default function Sidebar({
             style={{ width: 300, minWidth: 300, backgroundColor: "#212529" }}
         >
             <div className="d-flex align-items-center gap-3 p-3">
-                <button
-                    type="button"
-                    className="btn btn-link p-0 text-decoration-none d-flex align-items-center justify-content-center rounded bg-secondary bg-opacity-25 hover-bg-opacity-50 transition-all border-0 shadow-sm"
-                    style={{ width: 40, height: 40, fontSize: 20 }}
-                    onClick={onLogoClick}
-                    title="Go to Today"
+                <div
+                    className="d-flex align-items-center justify-content-center"
+                    style={{ width: 40, height: 40, fontSize: 24 }}
                 >
                     📅
-                </button>
+                </div>
                 <div className="fw-semibold text-white fs-5 letter-spacing-1">Smart Scheduler</div>
             </div>
 
-            <div className="p-3">
+            <div
+                className="p-3 transition-all hover-white-10 rounded-3 m-2"
+                style={{ cursor: "pointer" }}
+                onClick={onLogoClick}
+                title="Go to Today"
+            >
                 <div className="text-uppercase small text-info fw-bold letter-spacing-2 mb-1">
                     Today
                 </div>
@@ -70,8 +74,10 @@ export default function Sidebar({
                                 : minutesToLabel(item.startMin);
                             return (
                                 <div
-                                    className="d-flex gap-2 align-items-start"
+                                    className="d-flex gap-2 align-items-start p-2 rounded-3 transition-all hover-white-10"
                                     key={`${item.dateKey}-${item.id}`}
+                                    style={{ cursor: "pointer" }}
+                                    onClick={() => onEventClick(item.dateKey)}
                                 >
                                     <div
                                         className="rounded-circle flex-shrink-0 mt-1"

@@ -1,6 +1,6 @@
 import React from "react";
-import { Kind } from "../../types";
-import { RAINBOW } from "../../utils";
+import { Kind, Ev } from "../../types";
+import { RAINBOW, timeToMinutes } from "../../utils";
 
 interface EventModalProps {
     isOpen: boolean;
@@ -28,6 +28,7 @@ interface EventModalProps {
     prettyDate: string;
     realTodayKey: string;
     isTodaySelected: boolean;
+    events: Record<string, Ev[]>;
 }
 
 export default function EventModal({
@@ -56,7 +57,24 @@ export default function EventModal({
     prettyDate,
     realTodayKey,
     isTodaySelected,
+    events,
 }: EventModalProps) {
+    const startMinVal = mAllDay ? 0 : timeToMinutes(mStart);
+    const endMinVal = mAllDay ? 0 : timeToMinutes(mEnd);
+    const duration = endMinVal - startMinVal;
+
+    const existingOnDay = events[mDate] || [];
+    const conflict = !mAllDay && existingOnDay.find(ex => {
+        if (ex.allDay) return false;
+        return (startMinVal < (ex.endMin ?? 0)) && (endMinVal > (ex.startMin ?? 0));
+    });
+
+    const isDurationTooShort = !mAllDay && duration > 0 && duration < 5;
+    const isPastTime = !mAllDay && isTodaySelected && mStart < minStart;
+    const isInvalidTime = !mAllDay && endMinVal < startMinVal;
+
+    const canSave = mTitle.trim() !== "" && !conflict && !isDurationTooShort && !isPastTime && !isInvalidTime;
+
     return (
         <div
             className={`position-fixed inset-0 z-3 p-4 d-flex align-items-center justify-content-center ${isOpen ? "" : "d-none"
@@ -98,8 +116,8 @@ export default function EventModal({
                     <div className="d-flex justify-content-center gap-3 mt-3">
                         <div
                             className={`btn btn-sm fw-bold rounded-pill px-4 ${modalKind === "event"
-                                    ? "btn-white shadow-sm text-dark"
-                                    : "btn-light text-secondary border-0"
+                                ? "btn-white shadow-sm text-dark"
+                                : "btn-light text-secondary border-0"
                                 }`}
                             onClick={() => setModalKind("event")}
                             role="button"
@@ -108,8 +126,8 @@ export default function EventModal({
                         </div>
                         <div
                             className={`btn btn-sm fw-bold rounded-pill px-4 ${modalKind === "task"
-                                    ? "btn-white shadow-sm text-dark"
-                                    : "btn-light text-secondary border-0"
+                                ? "btn-white shadow-sm text-dark"
+                                : "btn-light text-secondary border-0"
                                 }`}
                             onClick={() => setModalKind("task")}
                             role="button"
@@ -147,7 +165,7 @@ export default function EventModal({
 
                                     <input
                                         className="form-control form-control-sm border-0 bg-secondary bg-opacity-10 text-dark fw-bold text-center p-1 rounded-2"
-                                        style={{ width: 80 }}
+                                        style={{ width: 120 }}
                                         type="time"
                                         value={mStart}
                                         onChange={(e) => setMStart(e.target.value)}
@@ -163,7 +181,7 @@ export default function EventModal({
 
                                     <input
                                         className="form-control form-control-sm border-0 bg-secondary bg-opacity-10 text-dark fw-bold text-center p-1 rounded-2"
-                                        style={{ width: 80 }}
+                                        style={{ width: 120 }}
                                         type="time"
                                         value={mEnd}
                                         onChange={(e) => setMEnd(e.target.value)}
@@ -187,6 +205,27 @@ export default function EventModal({
                                         </label>
                                     </div>
                                 </div>
+
+                                {conflict && (
+                                    <div className="mt-2 text-danger small fw-bold d-flex align-items-center gap-1">
+                                        ⚠️ Time conflict! Overlaps with "{conflict.title}"
+                                    </div>
+                                )}
+                                {isDurationTooShort && (
+                                    <div className="mt-2 text-warning small fw-bold d-flex align-items-center gap-1">
+                                        ⚠️ Minimum duration is 5 minutes
+                                    </div>
+                                )}
+                                {isPastTime && (
+                                    <div className="mt-2 text-danger small fw-bold d-flex align-items-center gap-1">
+                                        ⚠️ Cannot schedule in the past
+                                    </div>
+                                )}
+                                {isInvalidTime && (
+                                    <div className="mt-2 text-danger small fw-bold d-flex align-items-center gap-1">
+                                        ⚠️ End time must be after start time
+                                    </div>
+                                )}
 
                                 <input
                                     className="form-control form-control-sm mt-2 border-0 bg-transparent px-0"
@@ -280,8 +319,8 @@ export default function EventModal({
                                             <div
                                                 key={c}
                                                 className={`rounded-circle border border-2 ${mColor === c
-                                                        ? "border-dark shadow-sm"
-                                                        : "border-transparent"
+                                                    ? "border-dark shadow-sm"
+                                                    : "border-transparent"
                                                     }`}
                                                 style={{
                                                     width: 24,
@@ -302,6 +341,7 @@ export default function EventModal({
                             <button
                                 className="btn btn-primary rounded-pill px-5 fw-bold shadow"
                                 type="submit"
+                                disabled={!canSave}
                             >
                                 Save
                             </button>
