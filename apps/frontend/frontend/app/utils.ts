@@ -18,7 +18,7 @@ export function pad(n: number) { return String(n).padStart(2, "0"); }
 export function keyOf(d: Date) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
 
 export function minutesToLabel(mins: number) {
-    let h = Math.floor(mins / 60);
+    const h = Math.floor(mins / 60);
     const m = mins % 60;
     const ap = h >= 12 ? "PM" : "AM";
     let hh = h % 12;

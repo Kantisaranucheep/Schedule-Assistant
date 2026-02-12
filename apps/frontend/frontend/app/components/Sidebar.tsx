@@ -1,12 +1,9 @@
-import React from "react";
-import { Ev } from "../types";
-import { minutesToLabel } from "../utils";
+import React, { useMemo } from "react";
+import { Ev, EventMap } from "../types";
+import { minutesToLabel, keyOf, monthNames } from "../utils";
 
 interface SidebarProps {
-    today: Date;
-    todayMonthYear: string;
-    todayWeekday: string;
-    upcoming: ({ dateKey: string } & Ev)[];
+    filteredEvents: EventMap;
     onHotkeysClick: () => void;
     onChatClick: () => void;
     onProfileClick: () => void;
@@ -15,16 +12,43 @@ interface SidebarProps {
 }
 
 export default function Sidebar({
-    today,
-    todayMonthYear,
-    todayWeekday,
-    upcoming,
+    filteredEvents,
     onHotkeysClick,
     onChatClick,
     onProfileClick,
     onLogoClick,
     onEventClick,
 }: SidebarProps) {
+    // Sidebar "today"
+    const TODAY = useMemo(() => new Date(), []);
+
+    const todayWeekday = useMemo(
+        () => TODAY.toLocaleDateString("en-US", { weekday: "short" }),
+        [TODAY]
+    );
+    const todayMonthYear = useMemo(
+        () => `${monthNames[TODAY.getMonth()]} ${TODAY.getFullYear()}`,
+        [TODAY]
+    );
+
+    // Upcoming uses FILTERED events
+    const upcoming = useMemo(() => {
+        const todayKey = keyOf(TODAY);
+        const list: Array<{ dateKey: string } & Ev> = [];
+
+        Object.keys(filteredEvents).forEach((dateKey) => {
+            if (dateKey < todayKey) return;
+            filteredEvents[dateKey].forEach((ev) => list.push({ dateKey, ...ev }));
+        });
+
+        list.sort((a, b) => {
+            if (a.dateKey !== b.dateKey) return a.dateKey.localeCompare(b.dateKey);
+            return (a.startMin ?? 0) - (b.startMin ?? 0);
+        });
+
+        return list;
+    }, [filteredEvents, TODAY]);
+
     return (
         <aside
             className="d-flex flex-column gap-1 border-end border-dark bg-dark text-white"
@@ -54,7 +78,7 @@ export default function Sidebar({
                 </div>
                 <div className="d-flex align-items-baseline gap-2">
                     <div className="display-1 fw-bold lh-1" style={{ color: "#fd7e14" }}>
-                        {today.getDate()}
+                        {TODAY.getDate()}
                     </div>
                     <div className="small text-white-50">{todayWeekday}</div>
                 </div>

@@ -1,28 +1,16 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import "./SmartScheduler.css";
 import {
-  Kind,
   Ev,
   EventMap,
-  ChatMsg,
-  ChatSession,
+  FilterCriteria,
 } from "./types";
 import {
   monthNames,
   RAINBOW,
-  pad,
   keyOf,
-  timeToMinutes,
-  parseISODate,
-  prettyDow,
-  prettyMonth,
-  nowTimeHHMM,
-  roundUpTimeHHMM,
-  uniq,
-  tokenize,
-  uid,
   addDaysISO,
   dayHeaderLabel,
 } from "./utils";
@@ -50,157 +38,10 @@ export default function Home() {
     keyOf(new Date())
   );
 
-  // ===== HotKeys overlay =====
+  // ===== Modals visibility =====
   const [hotkeysOpen, setHotkeysOpen] = useState(false);
-
-  // ===== Chat modal =====
   const [chatOpen, setChatOpen] = useState(false);
-
-  // Sessions + active session
-  const [sessions, setSessions] = useState<ChatSession[]>([
-    {
-      id: "s1",
-      title: "Chat 1",
-      messages: [
-        {
-          id: "m1",
-          role: "agent",
-          text: "Made An Appointment For Me",
-          createdAt: Date.now() - 50000,
-        },
-        {
-          id: "m2",
-          role: "agent",
-          text: "Ok Sir! Who is the appointment with, and when should it be?",
-          createdAt: Date.now() - 49000,
-        },
-        {
-          id: "m3",
-          role: "user",
-          text: "With my advisor, tomorrow afternoon",
-          tokens: tokenize("With my advisor, tomorrow afternoon"),
-          createdAt: Date.now() - 48000,
-        },
-        {
-          id: "m4",
-          role: "agent",
-          text: "Got it. What duration do you want? 30 or 60 minutes?",
-          createdAt: Date.now() - 47000,
-        },
-        {
-          id: "m5",
-          role: "user",
-          text: "30 minutes",
-          tokens: tokenize("30 minutes"),
-          createdAt: Date.now() - 46000,
-        },
-      ],
-    },
-    { id: "s2", title: "Chat 2", messages: [] },
-    { id: "s3", title: "Chat 3", messages: [] },
-    { id: "s4", title: "Chat 4", messages: [] },
-    { id: "s5", title: "Chat 5", messages: [] },
-  ]);
-  const [activeSessionId, setActiveSessionId] = useState("s1");
-  const activeSession = useMemo(
-    () => sessions.find((s) => s.id === activeSessionId) || sessions[0],
-    [sessions, activeSessionId]
-  );
-
-  // Tokens that you will later send to AI (aggregated)
-  const [tokenBuffer, setTokenBuffer] = useState<string[]>([]);
-  const [chatInput, setChatInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
-
-  // Auto-scroll chat to bottom
-  useEffect(() => {
-    if (chatOpen) {
-      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [activeSession?.messages, isTyping, chatOpen]);
-
-  function goToToday() {
-    const d = new Date();
-    setViewMonth(d.getMonth());
-    setViewYear(d.getFullYear());
-    // Optionally also reset selectedDay to today
-    const k = [
-      d.getFullYear(),
-      String(d.getMonth() + 1).padStart(2, "0"),
-      String(d.getDate()).padStart(2, "0"),
-    ].join("-");
-    setSelectedDay(k);
-    setViewMode("month");
-  }
-
-  function pushUserMessage(text: string) {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-
-    const tokens = tokenize(trimmed);
-
-    // Store tokens for later sending to AI
-    setTokenBuffer((prev) => {
-      const next = [...prev, ...tokens];
-      console.log("TOKENS SENT (buffer):", next);
-      return next;
-    });
-
-    // Save into current session as message + tokens
-    setSessions((prev) =>
-      prev.map((s) => {
-        if (s.id !== activeSessionId) return s;
-        return {
-          ...s,
-          messages: [
-            ...s.messages,
-            {
-              id: uid("msg"),
-              role: "user",
-              text: trimmed,
-              tokens,
-              createdAt: Date.now(),
-            },
-          ],
-        };
-      })
-    );
-
-    setChatInput("");
-
-    // Simulate AI response delay
-    setIsTyping(true);
-    setTimeout(() => {
-      setSessions((prev) =>
-        prev.map((s) => {
-          if (s.id !== activeSessionId) return s;
-          return {
-            ...s,
-            messages: [
-              ...s.messages,
-              {
-                id: uid("msg_ai"),
-                role: "agent",
-                text: "Got it! I'm simulating a 5-second wait to show off the cool loading animation. We can connect this to a real AI soon!",
-                createdAt: Date.now(),
-              },
-            ],
-          };
-        })
-      );
-      setIsTyping(false);
-    }, 5000);
-  }
-
-  function newSession() {
-    const id = uid("s");
-    setSessions((prev) => [
-      { id, title: `Chat ${prev.length + 1}`, messages: [] },
-      ...prev,
-    ]);
-    setActiveSessionId(id);
-  }
+  const [eventModalOpen, setEventModalOpen] = useState(false);
 
   // Events store
   const [events, setEvents] = useState<EventMap>({
@@ -246,45 +87,20 @@ export default function Home() {
   const [nextId, setNextId] = useState(100);
 
   // ===== Filters =====
-  const [searchText, setSearchText] = useState("");
-  const [filterOpen, setFilterOpen] = useState(false);
-
-  const [kindFilter, setKindFilter] = useState<"all" | "event" | "task">("all");
-  const [locationFilter, setLocationFilter] = useState("");
-  const [fromDate, setFromDate] = useState<string>("");
-  const [toDate, setToDate] = useState<string>("");
-  const [selectedColors, setSelectedColors] = useState<string[]>([]);
-
-  function toggleColor(c: string) {
-    setSelectedColors((prev) =>
-      prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]
-    );
-  }
-
-  const allColors = useMemo(() => {
-    const colors: string[] = [];
-    Object.values(events).forEach((arr) =>
-      arr.forEach((ev) => colors.push(ev.color))
-    );
-    return uniq(colors.length ? colors : RAINBOW);
-  }, [events]);
-
-  const activeFilterCount = useMemo(() => {
-    let n = 0;
-    if (searchText.trim()) n++;
-    if (kindFilter !== "all") n++;
-    if (fromDate) n++;
-    if (toDate) n++;
-    if (locationFilter.trim()) n++;
-    if (selectedColors.length > 0) n++;
-    return n;
-  }, [searchText, kindFilter, fromDate, toDate, locationFilter, selectedColors]);
+  const [filters, setFilters] = useState<FilterCriteria>({
+    searchText: "",
+    kindFilter: "all",
+    locationFilter: "",
+    fromDate: "",
+    toDate: "",
+    selectedColors: [],
+  });
 
   const filteredEvents = useMemo(() => {
-    const q = searchText.trim().toLowerCase();
-    const locQ = locationFilter.trim().toLowerCase();
-    const from = fromDate || "0000-01-01";
-    const to = toDate || "9999-12-31";
+    const q = filters.searchText.trim().toLowerCase();
+    const locQ = filters.locationFilter.trim().toLowerCase();
+    const from = filters.fromDate || "0000-01-01";
+    const to = filters.toDate || "9999-12-31";
 
     const out: EventMap = {};
 
@@ -292,8 +108,8 @@ export default function Home() {
       if (dateKey < from || dateKey > to) return;
 
       const filteredArr = arr.filter((ev) => {
-        if (kindFilter !== "all" && ev.kind !== kindFilter) return false;
-        if (selectedColors.length > 0 && !selectedColors.includes(ev.color))
+        if (filters.kindFilter !== "all" && ev.kind !== filters.kindFilter) return false;
+        if (filters.selectedColors.length > 0 && !filters.selectedColors.includes(ev.color))
           return false;
         if (q && !ev.title.toLowerCase().includes(q)) return false;
         if (locQ && !(ev.location || "").toLowerCase().includes(locQ))
@@ -305,36 +121,13 @@ export default function Home() {
     });
 
     return out;
-  }, [
-    events,
-    searchText,
-    locationFilter,
-    fromDate,
-    toDate,
-    kindFilter,
-    selectedColors,
-  ]);
-
-  // ===== Modal state =====
-  const [open, setOpen] = useState(false);
-  const [modalKind, setModalKind] = useState<Kind>("event");
-  const [mTitle, setMTitle] = useState("");
-  const [mDate, setMDate] = useState<string>(keyOf(new Date()));
-  const [mStart, setMStart] = useState("09:00");
-  const [mEnd, setMEnd] = useState("09:00");
-  const [mAllDay, setMAllDay] = useState(false);
-  const [mLocation, setMLocation] = useState("");
-  const [mNotes, setMNotes] = useState("");
-  const [mColor, setMColor] = useState<string>(RAINBOW[1]);
-
-  const realTodayKey = useMemo(() => keyOf(new Date()), []);
-  const isTodaySelected = mDate === realTodayKey;
+  }, [events, filters]);
 
   // close on ESC
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
-        setOpen(false);
+        setEventModalOpen(false);
         setHotkeysOpen(false);
         setChatOpen(false);
       }
@@ -343,36 +136,17 @@ export default function Home() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Time rules: no past time if today
-  const minStart = useMemo(() => {
-    if (!isTodaySelected || mAllDay) return "";
-    return roundUpTimeHHMM(nowTimeHHMM(), 5);
-  }, [isTodaySelected, mAllDay]);
-
-  useEffect(() => {
-    if (mAllDay) return;
-
-    if (isTodaySelected) {
-      const ms = roundUpTimeHHMM(nowTimeHHMM(), 5);
-      if (mStart < ms) setMStart(ms);
-      if (mEnd < ms) setMEnd(ms);
-      if (mEnd < mStart) setMEnd(mStart);
-    } else {
-      if (mEnd < mStart) setMEnd(mStart);
-    }
-  }, [isTodaySelected, mAllDay, mStart, mEnd]);
-
-  function openModal() {
-    setModalKind("event");
-    setMTitle("");
-    setMDate(realTodayKey);
-    setMStart("09:00");
-    setMEnd("09:00");
-    setMAllDay(false);
-    setMLocation("");
-    setMNotes("");
-    setMColor(RAINBOW[1]);
-    setOpen(true);
+  function goToToday() {
+    const d = new Date();
+    setViewMonth(d.getMonth());
+    setViewYear(d.getFullYear());
+    const k = [
+      d.getFullYear(),
+      String(d.getMonth() + 1).padStart(2, "0"),
+      String(d.getDate()).padStart(2, "0"),
+    ].join("-");
+    setSelectedDay(k);
+    setViewMode("month");
   }
 
   function prevMonth() {
@@ -396,33 +170,6 @@ export default function Home() {
     setViewYear(y);
   }
 
-  // Upcoming uses FILTERED events
-  const upcoming = useMemo(() => {
-    const todayKey = keyOf(TODAY);
-    const list: Array<{ dateKey: string } & Ev> = [];
-
-    Object.keys(filteredEvents).forEach((dateKey) => {
-      if (dateKey < todayKey) return;
-      filteredEvents[dateKey].forEach((ev) => list.push({ dateKey, ...ev }));
-    });
-
-    list.sort((a, b) => {
-      if (a.dateKey !== b.dateKey) return a.dateKey.localeCompare(b.dateKey);
-      return (a.startMin ?? 0) - (b.startMin ?? 0);
-    });
-
-    return list;
-  }, [filteredEvents, TODAY]);
-
-  const todayWeekday = useMemo(
-    () => TODAY.toLocaleDateString("en-US", { weekday: "short" }),
-    [TODAY]
-  );
-  const todayMonthYear = useMemo(
-    () => `${monthNames[TODAY.getMonth()]} ${TODAY.getFullYear()}`,
-    [TODAY]
-  );
-
   // Calendar cells (35) use FILTERED events
   const cells = useMemo(() => {
     const first = new Date(viewYear, viewMonth, 1);
@@ -440,7 +187,6 @@ export default function Home() {
       dayEvents: Ev[];
     }> = [];
 
-    // CHANGED: 35 cells (5 rows) instead of 42 (6 rows)
     for (let i = 0; i < 35; i++) {
       let d: Date;
       let muted = false;
@@ -475,98 +221,23 @@ export default function Home() {
     return out;
   }, [filteredEvents, viewYear, viewMonth, TODAY]);
 
-  function saveEvent(e: React.FormEvent) {
-    e.preventDefault();
-
-    const title = mTitle.trim();
-    if (!title) return;
-
-    if (mDate < realTodayKey) {
-      alert("You cannot choose a past date.");
-      return;
-    }
-
-    let startMinVal = 0;
-    let endMinVal = 0;
-
-    if (!mAllDay) {
-      if (isTodaySelected) {
-        const ms = roundUpTimeHHMM(nowTimeHHMM(), 5);
-        if (mStart < ms) {
-          alert("Start time cannot be in the past.");
-          setMStart(ms);
-          return;
-        }
-      }
-      startMinVal = timeToMinutes(mStart);
-      endMinVal = timeToMinutes(mEnd);
-
-      if (endMinVal < startMinVal) {
-        alert("End time cannot be earlier than start time.");
-        setMEnd(mStart);
-        return;
-      }
-
-      if (endMinVal - startMinVal < 5) {
-        alert("Event duration must be at least 5 minutes.");
-        return;
-      }
-
-      // Conflict Check
-      const existingOnDay = events[mDate] || [];
-      const conflict = existingOnDay.find(ex => {
-        if (ex.allDay) return false;
-        // Overlap: (start1 < end2) && (end1 > start2)
-        return (startMinVal < (ex.endMin ?? 0)) && (endMinVal > (ex.startMin ?? 0));
-      });
-
-      if (conflict) {
-        alert(`Time conflict! You cannot have multiple tasks at the same time (overlaps with "${conflict.title}").`);
-        return;
-      }
-    }
-
-    const newItem: Ev = {
-      id: nextId,
-      kind: modalKind,
-      allDay: mAllDay,
-      startMin: startMinVal,
-      endMin: endMinVal,
-      title,
-      color: mColor || RAINBOW[1],
-      location: mLocation.trim(),
-      notes: mNotes.trim(),
-    };
-
+  function onSaveEvent(newItem: Ev, date: string) {
+    const eventWithId = { ...newItem, id: nextId };
     setNextId((x) => x + 1);
 
     setEvents((prev) => {
       const next: EventMap = { ...prev };
-      const arr = next[mDate] ? [...next[mDate]] : [];
-      arr.push(newItem);
+      const arr = next[date] ? [...next[date]] : [];
+      arr.push(eventWithId);
       arr.sort((a, b) => (a.startMin ?? 0) - (b.startMin ?? 0));
-      next[mDate] = arr;
+      next[date] = arr;
       return next;
     });
 
-    setOpen(false);
+    setEventModalOpen(false);
   }
-
-  const prettyDate = useMemo(() => {
-    const dt = parseISODate(mDate);
-    return `${prettyDow(dt)}, ${dt.getDate()} ${prettyMonth(dt)}`;
-  }, [mDate]);
 
   const monthTitle = `${monthNames[viewMonth].toUpperCase()} ${viewYear}`;
-
-  function clearAllFilters() {
-    setKindFilter("all");
-    setSelectedColors([]);
-    setFromDate("");
-    setToDate("");
-    setLocationFilter("");
-    setSearchText("");
-  }
 
   // ===== DAY VIEW calculation (24 hours) =====
   const dayEvents = (filteredEvents[selectedDay] || [])
@@ -578,10 +249,7 @@ export default function Home() {
       <div className="flex-grow-1 d-flex overflow-hidden">
         {/* SIDEBAR */}
         <Sidebar
-          today={TODAY}
-          todayMonthYear={todayMonthYear}
-          todayWeekday={todayWeekday}
-          upcoming={upcoming}
+          filteredEvents={filteredEvents}
           onHotkeysClick={() => setHotkeysOpen(true)}
           onChatClick={() => setChatOpen(true)}
           onProfileClick={() => { }}
@@ -630,24 +298,9 @@ export default function Home() {
             {/* Right: Search, Filter, Add & View Toggle */}
             <div className="d-flex align-items-center gap-2">
               <FilterBar
-                searchText={searchText}
-                setSearchText={setSearchText}
-                filterOpen={filterOpen}
-                setFilterOpen={setFilterOpen}
-                activeFilterCount={activeFilterCount}
-                kindFilter={kindFilter}
-                setKindFilter={setKindFilter}
-                fromDate={fromDate}
-                setFromDate={setFromDate}
-                toDate={toDate}
-                setToDate={setToDate}
-                locationFilter={locationFilter}
-                setLocationFilter={setLocationFilter}
-                selectedColors={selectedColors}
-                allColors={allColors}
-                toggleColor={toggleColor}
-                clearAllFilters={clearAllFilters}
-                onAddEvent={openModal}
+                events={events}
+                onFilterChange={setFilters}
+                onAddEvent={() => setEventModalOpen(true)}
               />
               {viewMode === "day" && (
                 <button
@@ -682,45 +335,13 @@ export default function Home() {
           <ChatModal
             isOpen={chatOpen}
             onClose={() => setChatOpen(false)}
-            sessions={sessions}
-            activeSessionId={activeSessionId}
-            setActiveSessionId={setActiveSessionId}
-            activeSession={activeSession}
-            chatInput={chatInput}
-            setChatInput={setChatInput}
-            pushUserMessage={pushUserMessage}
-            newSession={newSession}
-            isTyping={isTyping}
-            chatEndRef={chatEndRef}
           />
 
           {/* ===== EVENT MODAL ===== */}
           <EventModal
-            isOpen={open}
-            onClose={() => setOpen(false)}
-            mTitle={mTitle}
-            setMTitle={setMTitle}
-            modalKind={modalKind}
-            setModalKind={setModalKind}
-            saveEvent={saveEvent}
-            mDate={mDate}
-            setMDate={setMDate}
-            mStart={mStart}
-            setMStart={setMStart}
-            mEnd={mEnd}
-            setMEnd={setMEnd}
-            mAllDay={mAllDay}
-            setMAllDay={setMAllDay}
-            mLocation={mLocation}
-            setMLocation={setMLocation}
-            mNotes={mNotes}
-            setMNotes={setMNotes}
-            mColor={mColor}
-            setMColor={setMColor}
-            minStart={minStart}
-            prettyDate={prettyDate}
-            realTodayKey={realTodayKey}
-            isTodaySelected={isTodaySelected}
+            isOpen={eventModalOpen}
+            onClose={() => setEventModalOpen(false)}
+            onSave={onSaveEvent}
             events={events}
           />
         </main>

@@ -1,6 +1,6 @@
 import React from "react";
 import { Ev } from "../types";
-import { addDaysISO, dayHeaderLabel, minutesToLabel } from "../utils";
+import { addDaysISO, minutesToLabel } from "../utils";
 
 interface DayViewProps {
     dayEvents: Ev[];
