@@ -1,49 +1,139 @@
-import React from "react";
-import { ChatSession } from "../../../types";
-import {
-    handleFormSubmit,
-    handleInputKeyDown,
-} from "./chatModalHelper";
+import React, { useState, useMemo, useEffect, useRef } from "react";
+import { ChatSession } from "../../types";
+import { tokenize, uid } from "../../utils";
 
 interface ChatModalProps {
     isOpen: boolean;
     onClose: () => void;
-    sessions: ChatSession[];
-    activeSessionId: string | null;
-    setActiveSessionId: (id: string) => void;
-    activeSession: ChatSession | undefined;
-    chatInput: string;
-    setChatInput: (s: string) => void;
-    pushUserMessage: (s: string) => void;
-    newSession: () => void;
-    isTyping: boolean;
-    ttsEnabled: boolean;
-    toggleTts: () => void;
-    chatEndRef: React.RefObject<HTMLDivElement | null>;
-    isRecording: boolean;
-    toggleRecording: () => void;
-    loading?: boolean;
 }
 
 export default function ChatModal({
     isOpen,
     onClose,
-    sessions,
-    activeSessionId,
-    setActiveSessionId,
-    activeSession,
-    chatInput,
-    setChatInput,
-    pushUserMessage,
-    newSession,
-    isTyping,
-    ttsEnabled,
-    toggleTts,
-    chatEndRef,
-    isRecording,
-    toggleRecording,
-    loading = false,
 }: ChatModalProps) {
+    // Sessions + active session
+    const [sessions, setSessions] = useState<ChatSession[]>([
+        {
+            id: "s1",
+            title: "Chat 1",
+            messages: [
+                {
+                    id: "m1",
+                    role: "agent",
+                    text: "Made An Appointment For Me",
+                    createdAt: 1700000000000,
+                },
+                {
+                    id: "m2",
+                    role: "agent",
+                    text: "Ok Sir! Who is the appointment with, and when should it be?",
+                    createdAt: 1700000001000,
+                },
+                {
+                    id: "m3",
+                    role: "user",
+                    text: "With my advisor, tomorrow afternoon",
+                    tokens: tokenize("With my advisor, tomorrow afternoon"),
+                    createdAt: 1700000002000,
+                },
+                {
+                    id: "m4",
+                    role: "agent",
+                    text: "Got it. What duration do you want? 30 or 60 minutes?",
+                    createdAt: 1700000003000,
+                },
+                {
+                    id: "m5",
+                    role: "user",
+                    text: "30 minutes",
+                    tokens: tokenize("30 minutes"),
+                    createdAt: 1700000004000,
+                },
+            ],
+        },
+        { id: "s2", title: "Chat 2", messages: [] },
+        { id: "s3", title: "Chat 3", messages: [] },
+        { id: "s4", title: "Chat 4", messages: [] },
+        { id: "s5", title: "Chat 5", messages: [] },
+    ]);
+    const [activeSessionId, setActiveSessionId] = useState("s1");
+    const activeSession = useMemo(
+        () => sessions.find((s) => s.id === activeSessionId) || sessions[0],
+        [sessions, activeSessionId]
+    );
+
+    const [chatInput, setChatInput] = useState("");
+    const [isTyping, setIsTyping] = useState(false);
+    const chatEndRef = useRef<HTMLDivElement>(null);
+
+    // Auto-scroll chat to bottom
+    useEffect(() => {
+        if (isOpen) {
+            chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }
+    }, [activeSession?.messages, isTyping, isOpen]);
+
+    function pushUserMessage(text: string) {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+
+        const tokens = tokenize(trimmed);
+
+        // Save into current session as message + tokens
+        setSessions((prev) =>
+            prev.map((s) => {
+                if (s.id !== activeSessionId) return s;
+                return {
+                    ...s,
+                    messages: [
+                        ...s.messages,
+                        {
+                            id: uid("msg"),
+                            role: "user",
+                            text: trimmed,
+                            tokens,
+                            createdAt: Date.now(),
+                        },
+                    ],
+                };
+            })
+        );
+
+        setChatInput("");
+
+        // Simulate AI response delay
+        setIsTyping(true);
+        setTimeout(() => {
+            setSessions((prev) =>
+                prev.map((s) => {
+                    if (s.id !== activeSessionId) return s;
+                    return {
+                        ...s,
+                        messages: [
+                            ...s.messages,
+                            {
+                                id: uid("msg_ai"),
+                                role: "agent",
+                                text: "Got it! I'm simulating a 5-second wait to show off the cool loading animation. We can connect this to a real AI soon!",
+                                createdAt: Date.now(),
+                            },
+                        ],
+                    };
+                })
+            );
+            setIsTyping(false);
+        }, 5000);
+    }
+
+    function newSession() {
+        const id = uid("s");
+        setSessions((prev) => [
+            { id, title: `Chat ${prev.length + 1}`, messages: [] },
+            ...prev,
+        ]);
+        setActiveSessionId(id);
+    }
+
     return (
         <div
             className={`position-fixed inset-0 z-3 p-4 d-flex align-items-center justify-content-center ${isOpen ? "" : "d-none"
@@ -89,37 +179,24 @@ export default function ChatModal({
                         className="flex-grow-1 overflow-auto p-2"
                         style={{ minHeight: 0 }}
                     >
-                        {loading ? (
-                            <div className="text-center text-muted py-4">
-                                <div className="spinner-border spinner-border-sm me-2" role="status">
-                                    <span className="visually-hidden">Loading...</span>
-                                </div>
-                                Loading chats...
-                            </div>
-                        ) : sessions.length === 0 ? (
-                            <div className="text-center text-muted py-4 small">
-                                No chats yet
-                            </div>
-                        ) : (
-                            sessions.map((s) => (
-                                <button
-                                    key={s.id}
-                                    type="button"
-                                    className={`w-100 text-start btn btn-sm mb-1 position-relative ${s.id === activeSessionId
-                                        ? "bg-secondary bg-opacity-10 text-dark fw-bold border-start border-3 border-primary"
-                                        : "btn-ghost text-muted"
-                                        }`}
-                                    style={{
-                                        paddingLeft: s.id === activeSessionId ? "11px" : "12px",
-                                        borderTopLeftRadius: 0,
-                                        borderBottomLeftRadius: 0,
-                                    }}
-                                    onClick={() => setActiveSessionId(s.id)}
-                                >
-                                    {s.title}
-                                </button>
-                            ))
-                        )}
+                        {sessions.map((s) => (
+                            <button
+                                key={s.id}
+                                type="button"
+                                className={`w-100 text-start btn btn-sm mb-1 position-relative ${s.id === activeSessionId
+                                    ? "bg-secondary bg-opacity-10 text-dark fw-bold border-start border-3 border-primary"
+                                    : "btn-ghost text-muted"
+                                    }`}
+                                style={{
+                                    paddingLeft: s.id === activeSessionId ? "11px" : "12px",
+                                    borderTopLeftRadius: 0,
+                                    borderBottomLeftRadius: 0,
+                                }}
+                                onClick={() => setActiveSessionId(s.id)}
+                            >
+                                {s.title}
+                            </button>
+                        ))}
                     </div>
 
                     <div
@@ -150,27 +227,15 @@ export default function ChatModal({
                             <span className="fw-bold">Scheduler Agent</span>
                         </div>
 
-                        <div className="d-flex gap-2">
-                            <button
-                                type="button"
-                                className={`btn btn-sm rounded-3 shadow-sm ${ttsEnabled ? "btn-primary" : "btn-outline-secondary"}`}
-                                style={{ height: 28, width: 28, padding: 0, lineHeight: 1 }}
-                                onClick={toggleTts}
-                                aria-label="Toggle TTS"
-                            >
-                                {ttsEnabled ? "🔊" : "🔇"}
-                            </button>
-
-                            <button
-                                type="button"
-                                className="btn btn-sm btn-outline-secondary rounded-3 shadow-sm"
-                                style={{ height: 28, width: 28, padding: 0, lineHeight: 1 }}
-                                onClick={onClose}
-                                aria-label="Close chat"
-                            >
-                                ×
-                            </button>
-                        </div>
+                        <button
+                            type="button"
+                            className="btn btn-sm btn-outline-secondary rounded-3 shadow-sm"
+                            style={{ height: 28, width: 28, padding: 0, lineHeight: 1 }}
+                            onClick={onClose}
+                            aria-label="Close chat"
+                        >
+                            ×
+                        </button>
                     </div>
 
                     <div
@@ -227,15 +292,10 @@ export default function ChatModal({
                     <form
                         className="px-3 border-top d-flex align-items-center gap-2 bg-light flex-shrink-0"
                         style={{ height: 80, boxSizing: "border-box" }}
-                        onSubmit={(e) =>
-                            handleFormSubmit(
-                                e,
-                                chatInput,
-                                activeSession,
-                                pushUserMessage,
-                                setChatInput,
-                            )
-                        }
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            pushUserMessage(chatInput);
+                        }}
                     >
                         <input
                             className="form-control rounded-pill shadow-sm border-secondary-subtle"
@@ -243,35 +303,11 @@ export default function ChatModal({
                             style={{ height: 44 }}
                             value={chatInput}
                             onChange={(e) => setChatInput(e.target.value)}
-                            onKeyDown={(e) =>
-                                handleInputKeyDown(e, (formEvent) =>
-                                    handleFormSubmit(
-                                        formEvent,
-                                        chatInput,
-                                        activeSession,
-                                        pushUserMessage,
-                                        setChatInput,
-                                    ),
-                                )
-                            }
                         />
-
-                        <button
-                            className={`btn rounded-circle shadow-sm d-flex align-items-center justify-content-center ${isRecording ? "btn-danger" : "btn-primary"}`}
-                            style={{ width: 44, height: 44 }}
-                            type="button"
-                            id="btn-send-mic"
-                            onClick={toggleRecording}
-                            aria-label="Toggle Recording"
-                        >
-                            {isRecording ? "⏹️" : "🎤"}
-                        </button>
-
                         <button
                             className="btn btn-primary rounded-circle shadow-sm d-flex align-items-center justify-content-center"
                             style={{ width: 44, height: 44 }}
                             type="submit"
-                            id="btn-send"
                             aria-label="Send"
                         >
                             ➤

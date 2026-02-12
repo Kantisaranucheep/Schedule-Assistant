@@ -27,7 +27,7 @@ export default function HotkeysModal({ isOpen, onClose }: HotkeysModalProps) {
                     backdropFilter: "blur(10px)",
                 }}
             >
-                <div className="d-flex align-items-center justify-content-between p-3">
+                <div className="position-absolute top-0 start-0 w-100 d-flex align-items-center justify-content-between p-3 z-3">
                     <div className="small fw-bold text-uppercase letter-spacing-2 text-white-50">
                         HotKeys
                     </div>
@@ -42,10 +42,10 @@ export default function HotkeysModal({ isOpen, onClose }: HotkeysModalProps) {
                 </div>
 
                 <div
-                    className="d-grid align-items-center justify-items-center h-100 p-4"
+                    className="d-grid align-items-center justify-items-center w-100 h-100 p-4"
                     style={{
                         gridTemplateColumns: "1fr 280px 1fr",
-                        gridTemplateRows: "1fr 140px 1fr 1fr",
+                        gridTemplateRows: "1fr 140px 140px 1fr",
                         gridTemplateAreas: `". top ." "leftTop core rightTop" "leftBottom core rightBottom" ". bottom ."`,
                     }}
                 >
@@ -58,6 +58,8 @@ export default function HotkeysModal({ isOpen, onClose }: HotkeysModalProps) {
                             width: 130,
                             height: 130,
                             cursor: "pointer",
+                            justifySelf: "center",
+                            alignSelf: "center",
                         }}
                         onClick={onClose}
                         aria-label="Close HotKeys"

@@ -1,47 +1,72 @@
-import React from "react";
-import { RAINBOW } from "../utils";
+import React, { useState, useMemo, useEffect } from "react";
+import { RAINBOW, uniq } from "../utils";
+import { EventMap, FilterCriteria } from "../types";
 
 interface FilterBarProps {
-    searchText: string;
-    setSearchText: (s: string) => void;
-    filterOpen: boolean;
-    setFilterOpen: React.Dispatch<React.SetStateAction<boolean>>;
-    activeFilterCount: number;
-    kindFilter: "all" | "event" | "task";
-    setKindFilter: (k: "all" | "event" | "task") => void;
-    fromDate: string;
-    setFromDate: (d: string) => void;
-    toDate: string;
-    setToDate: (d: string) => void;
-    locationFilter: string;
-    setLocationFilter: (l: string) => void;
-    selectedColors: string[];
-    allColors: string[];
-    toggleColor: (c: string) => void;
-    clearAllFilters: () => void;
+    events: EventMap;
+    onFilterChange: (filters: FilterCriteria) => void;
     onAddEvent: () => void;
 }
 
 export default function FilterBar({
-    searchText,
-    setSearchText,
-    filterOpen,
-    setFilterOpen,
-    activeFilterCount,
-    kindFilter,
-    setKindFilter,
-    fromDate,
-    setFromDate,
-    toDate,
-    setToDate,
-    locationFilter,
-    setLocationFilter,
-    selectedColors,
-    allColors,
-    toggleColor,
-    clearAllFilters,
+    events,
+    onFilterChange,
     onAddEvent,
 }: FilterBarProps) {
+    const [searchText, setSearchText] = useState("");
+    const [filterOpen, setFilterOpen] = useState(false);
+    const [kindFilter, setKindFilter] = useState<"all" | "event" | "task">("all");
+    const [locationFilter, setLocationFilter] = useState("");
+    const [fromDate, setFromDate] = useState<string>("");
+    const [toDate, setToDate] = useState<string>("");
+    const [selectedColors, setSelectedColors] = useState<string[]>([]);
+
+    const allColors = useMemo(() => {
+        const colors: string[] = [];
+        Object.values(events).forEach((arr) =>
+            arr.forEach((ev) => colors.push(ev.color))
+        );
+        return uniq(colors.length ? colors : RAINBOW);
+    }, [events]);
+
+    const activeFilterCount = useMemo(() => {
+        let n = 0;
+        if (searchText.trim()) n++;
+        if (kindFilter !== "all") n++;
+        if (fromDate) n++;
+        if (toDate) n++;
+        if (locationFilter.trim()) n++;
+        if (selectedColors.length > 0) n++;
+        return n;
+    }, [searchText, kindFilter, fromDate, toDate, locationFilter, selectedColors]);
+
+    function toggleColor(c: string) {
+        setSelectedColors((prev) =>
+            prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]
+        );
+    }
+
+    function clearAllFilters() {
+        setKindFilter("all");
+        setSelectedColors([]);
+        setFromDate("");
+        setToDate("");
+        setLocationFilter("");
+        setSearchText("");
+    }
+
+    // Notify parent of filter changes
+    useEffect(() => {
+        onFilterChange({
+            searchText,
+            kindFilter,
+            locationFilter,
+            fromDate,
+            toDate,
+            selectedColors,
+        });
+    }, [searchText, kindFilter, locationFilter, fromDate, toDate, selectedColors, onFilterChange]);
+
     return (
         <div
             className="d-flex align-items-center justify-content-end gap-2"
@@ -79,8 +104,8 @@ export default function FilterBar({
             <div className="position-relative">
                 <button
                     className={`btn d-flex align-items-center justify-content-center p-0 position-relative shadow-sm transition-all ${filterOpen || activeFilterCount > 0
-                            ? "btn-dark"
-                            : "btn-light border border-secondary-subtle text-dark"
+                        ? "btn-dark"
+                        : "btn-light border border-secondary-subtle text-dark"
                         }`}
                     style={{ width: 36, height: 36, borderRadius: 10 }}
                     title="Filter"
@@ -133,8 +158,8 @@ export default function FilterBar({
                                     <button
                                         key={k}
                                         className={`flex-grow-1 btn btn-sm rounded-pill fw-semibold small ${kindFilter === k
-                                                ? "btn-white shadow-sm text-dark"
-                                                : "text-muted border-0 hover-bg-gray"
+                                            ? "btn-white shadow-sm text-dark"
+                                            : "text-muted border-0 hover-bg-gray"
                                             }`}
                                         onClick={() => setKindFilter(k)}
                                         type="button"
@@ -194,8 +219,8 @@ export default function FilterBar({
                                         key={c}
                                         type="button"
                                         className={`rounded-circle d-flex align-items-center justify-content-center transition-all ${selectedColors.includes(c)
-                                                ? "ring-2 ring-offset-1"
-                                                : "opacity-75 hover-opacity-100"
+                                            ? "ring-2 ring-offset-1"
+                                            : "opacity-75 hover-opacity-100"
                                             }`}
                                         style={{
                                             width: 28,

@@ -1,64 +1,98 @@
-import React from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Kind, Ev } from "../../types";
-import { RAINBOW, timeToMinutes } from "../../utils";
+import {
+    RAINBOW,
+    timeToMinutes,
+    keyOf,
+    roundUpTimeHHMM,
+    nowTimeHHMM,
+    parseISODate,
+    prettyDow,
+    prettyMonth
+} from "../../utils";
 
 interface EventModalProps {
     isOpen: boolean;
     onClose: () => void;
-    mTitle: string;
-    setMTitle: (s: string) => void;
-    modalKind: Kind;
-    setModalKind: (k: Kind) => void;
-    saveEvent: (e: React.FormEvent) => void;
-    mDate: string;
-    setMDate: (s: string) => void;
-    mStart: string;
-    setMStart: (s: string) => void;
-    mEnd: string;
-    setMEnd: (s: string) => void;
-    mAllDay: boolean;
-    setMAllDay: (b: boolean) => void;
-    mLocation: string;
-    setMLocation: (s: string) => void;
-    mNotes: string;
-    setMNotes: (s: string) => void;
-    mColor: string;
-    setMColor: (s: string) => void;
-    minStart: string;
-    prettyDate: string;
-    realTodayKey: string;
-    isTodaySelected: boolean;
+    onSave: (event: Ev, date: string) => void;
     events: Record<string, Ev[]>;
 }
 
 export default function EventModal({
     isOpen,
     onClose,
-    mTitle,
-    setMTitle,
-    modalKind,
-    setModalKind,
-    saveEvent,
-    mDate,
-    setMDate,
-    mStart,
-    setMStart,
-    mEnd,
-    setMEnd,
-    mAllDay,
-    setMAllDay,
-    mLocation,
-    setMLocation,
-    mNotes,
-    setMNotes,
-    mColor,
-    setMColor,
-    minStart,
-    prettyDate,
-    realTodayKey,
-    isTodaySelected,
+    onSave,
     events,
 }: EventModalProps) {
+    const realTodayKey = useMemo(() => keyOf(new Date()), []);
+
+    // Form State
+    const [modalKind, setModalKind] = useState<Kind>("event");
+    const [mTitle, setMTitle] = useState("");
+    const [mDate, setMDate] = useState<string>(realTodayKey);
+    const [mStart, setMStart] = useState("09:00");
+    const [mEnd, setMEnd] = useState("09:00");
+    const [mAllDay, setMAllDay] = useState(false);
+    const [mLocation, setMLocation] = useState("");
+    const [mNotes, setMNotes] = useState("");
+    const [mColor, setMColor] = useState<string>(RAINBOW[1]);
+
+    const isTodaySelected = mDate === realTodayKey;
+
+    // Reset form on open
+    useEffect(() => {
+        if (isOpen) {
+            const t = setTimeout(() => {
+                setModalKind("event");
+                setMTitle("");
+                setMDate(realTodayKey);
+                setMStart("09:00");
+                setMEnd("09:00");
+                setMAllDay(false);
+                setMLocation("");
+                setMNotes("");
+                setMColor(RAINBOW[1]);
+            }, 0);
+            return () => clearTimeout(t);
+        }
+    }, [isOpen, realTodayKey]);
+
+    const minStart = useMemo(() => {
+        if (!isTodaySelected || mAllDay) return "";
+        return roundUpTimeHHMM(nowTimeHHMM(), 5);
+    }, [isTodaySelected, mAllDay]);
+
+    const handleStartChange = (val: string) => {
+        let newVal = val;
+        if (isTodaySelected && !mAllDay) {
+            const ms = roundUpTimeHHMM(nowTimeHHMM(), 5);
+            if (val < ms) newVal = ms;
+        }
+        setMStart(newVal);
+        if (mEnd < newVal) setMEnd(newVal);
+    };
+
+    const handleEndChange = (val: string) => {
+        let newVal = val;
+        if (isTodaySelected && !mAllDay) {
+            const ms = roundUpTimeHHMM(nowTimeHHMM(), 5);
+            if (val < ms) newVal = ms;
+        }
+        if (newVal < mStart) newVal = mStart;
+        setMEnd(newVal);
+    };
+
+    const handleDateChange = (val: string) => {
+        setMDate(val);
+        if (val === realTodayKey && !mAllDay) {
+            const ms = roundUpTimeHHMM(nowTimeHHMM(), 5);
+            if (mStart < ms) {
+                setMStart(ms);
+                if (mEnd < ms) setMEnd(ms);
+            }
+        }
+    };
+
     const startMinVal = mAllDay ? 0 : timeToMinutes(mStart);
     const endMinVal = mAllDay ? 0 : timeToMinutes(mEnd);
     const duration = endMinVal - startMinVal;
@@ -69,11 +103,65 @@ export default function EventModal({
         return (startMinVal < (ex.endMin ?? 0)) && (endMinVal > (ex.startMin ?? 0));
     });
 
-    const isDurationTooShort = !mAllDay && duration > 0 && duration < 5;
+    const isDurationTooShort = !mAllDay && duration < 5;
     const isPastTime = !mAllDay && isTodaySelected && mStart < minStart;
     const isInvalidTime = !mAllDay && endMinVal < startMinVal;
 
     const canSave = mTitle.trim() !== "" && !conflict && !isDurationTooShort && !isPastTime && !isInvalidTime;
+
+    function saveEvent(e: React.FormEvent) {
+        e.preventDefault();
+        const title = mTitle.trim();
+        if (!title) return;
+
+        if (mDate < realTodayKey) {
+            alert("You cannot choose a past date.");
+            return;
+        }
+
+        if (!mAllDay) {
+            if (isTodaySelected) {
+                const ms = roundUpTimeHHMM(nowTimeHHMM(), 5);
+                if (mStart < ms) {
+                    alert("Start time cannot be in the past.");
+                    setMStart(ms);
+                    return;
+                }
+            }
+            if (isInvalidTime) {
+                alert("End time cannot be earlier than start time.");
+                setMEnd(mStart);
+                return;
+            }
+            if (isDurationTooShort) {
+                alert("Event duration must be at least 5 minutes.");
+                return;
+            }
+            if (conflict) {
+                alert(`Time conflict! You cannot have multiple tasks at the same time (overlaps with "${conflict.title}").`);
+                return;
+            }
+        }
+
+        const newItem: Ev = {
+            id: Date.now(),
+            kind: modalKind,
+            allDay: mAllDay,
+            startMin: startMinVal,
+            endMin: endMinVal,
+            title,
+            color: mColor || RAINBOW[1],
+            location: mLocation.trim(),
+            notes: mNotes.trim(),
+        };
+
+        onSave(newItem, mDate);
+    }
+
+    const prettyDate = useMemo(() => {
+        const dt = parseISODate(mDate);
+        return `${prettyDow(dt)}, ${dt.getDate()} ${prettyMonth(dt)}`;
+    }, [mDate]);
 
     return (
         <div
@@ -168,7 +256,7 @@ export default function EventModal({
                                         style={{ width: 120 }}
                                         type="time"
                                         value={mStart}
-                                        onChange={(e) => setMStart(e.target.value)}
+                                        onChange={(e) => handleStartChange(e.target.value)}
                                         disabled={mAllDay}
                                         min={
                                             mAllDay
@@ -184,7 +272,7 @@ export default function EventModal({
                                         style={{ width: 120 }}
                                         type="time"
                                         value={mEnd}
-                                        onChange={(e) => setMEnd(e.target.value)}
+                                        onChange={(e) => handleEndChange(e.target.value)}
                                         disabled={mAllDay}
                                         min={mAllDay ? undefined : mStart}
                                     />
@@ -208,7 +296,7 @@ export default function EventModal({
 
                                 {conflict && (
                                     <div className="mt-2 text-danger small fw-bold d-flex align-items-center gap-1">
-                                        ⚠️ Time conflict! Overlaps with "{conflict.title}"
+                                        ⚠️ Time conflict! Overlaps with &quot;{conflict.title}&quot;
                                     </div>
                                 )}
                                 {isDurationTooShort && (
@@ -231,7 +319,7 @@ export default function EventModal({
                                     className="form-control form-control-sm mt-2 border-0 bg-transparent px-0"
                                     type="date"
                                     value={mDate}
-                                    onChange={(e) => setMDate(e.target.value)}
+                                    onChange={(e) => handleDateChange(e.target.value)}
                                     min={realTodayKey}
                                 />
                             </div>

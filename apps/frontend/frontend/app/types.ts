@@ -29,3 +29,11 @@ export type ChatSession = {
     title: string;
     messages: ChatMsg[];
 };
+export type FilterCriteria = {
+    searchText: string;
+    kindFilter: "all" | "event" | "task";
+    locationFilter: string;
+    fromDate: string;
+    toDate: string;
+    selectedColors: string[];
+};
