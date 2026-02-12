@@ -12,6 +12,7 @@ from app.routers import (
     chat_router,
     settings_router,
     agent_router,
+    chat_endpoint,
 )
 
 settings = get_settings()
@@ -40,6 +41,7 @@ app.include_router(events_router)
 app.include_router(chat_router)
 app.include_router(settings_router)
 app.include_router(agent_router)
+app.include_router(chat_endpoint.router)
 
 
 @app.get("/")

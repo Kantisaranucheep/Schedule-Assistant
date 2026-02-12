@@ -171,26 +171,63 @@ export default function Home() {
 
     // Simulate AI response delay
     setIsTyping(true);
-    setTimeout(() => {
-      setSessions((prev) =>
-        prev.map((s) => {
-          if (s.id !== activeSessionId) return s;
-          return {
-            ...s,
-            messages: [
-              ...s.messages,
-              {
-                id: uid("msg_ai"),
-                role: "agent",
-                text: "Got it! I'm simulating a 5-second wait to show off the cool loading animation. We can connect this to a real AI soon!",
-                createdAt: Date.now(),
-              },
-            ],
-          };
-        })
-      );
-      setIsTyping(false);
-    }, 5000);
+
+    // Call backend API
+    fetch("http://localhost:8000/agent/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: trimmed,
+        current_datetime: new Date().toISOString(),
+      }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Agent error");
+        return res.json();
+      })
+      .then((data) => {
+        const { reply } = data;
+        setSessions((prev) =>
+          prev.map((s) => {
+            if (s.id !== activeSessionId) return s;
+            return {
+              ...s,
+              messages: [
+                ...s.messages,
+                {
+                  id: uid("msg_ai"),
+                  role: "agent",
+                  text: reply,
+                  createdAt: Date.now(),
+                },
+              ],
+            };
+          })
+        );
+      })
+      .catch((err) => {
+        console.error("Chat Error:", err);
+        setSessions((prev) =>
+          prev.map((s) => {
+            if (s.id !== activeSessionId) return s;
+            return {
+              ...s,
+              messages: [
+                ...s.messages,
+                {
+                  id: uid("msg_err"),
+                  role: "agent",
+                  text: "Sorry, I'm having trouble connecting to my brain right now.",
+                  createdAt: Date.now(),
+                },
+              ],
+            };
+          })
+        );
+      })
+      .finally(() => {
+        setIsTyping(false);
+      });
   }
 
   function newSession() {

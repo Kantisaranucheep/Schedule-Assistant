@@ -2,7 +2,6 @@
 """Agent configuration settings."""
 
 from functools import lru_cache
-from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -19,22 +18,8 @@ class AgentSettings(BaseSettings):
 
     # Ollama settings
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.2"
+    ollama_model: str = "gemma3:4b"
     ollama_timeout: int = 60
-
-    # Gemini settings
-    agent_enable_gemini: bool = False
-    gemini_api_key: str = ""
-    gemini_model: str = "gemini-pro"
-
-    # Prolog settings
-    prolog_mode: Literal["subprocess", "service"] = "subprocess"
-    prolog_service_url: str = "http://localhost:8081"
-    prolog_kb_path: str = "../../prolog"  # Relative to backend app
-
-    # Agent behavior
-    agent_default_confidence_threshold: float = 0.7
-    agent_max_retries: int = 2
 
 
 @lru_cache
