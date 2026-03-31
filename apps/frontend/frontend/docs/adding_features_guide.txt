@@ -1,0 +1,200 @@
+FRONTEND FEATURE ADDITION GUIDE
+================================
+
+This guide explains how to add new features to the refactored frontend codebase.
+The codebase is organized with clear separation of concerns to make feature development easier.
+
+ARCHITECTURE OVERVIEW
+=====================
+
+The frontend follows a modular architecture:
+
+- app/page.tsx: Main page component that orchestrates everything
+- app/hooks/: Custom hooks for state management
+- app/data/: Initial data and constants
+- app/utils/: Utility functions organized by category
+- app/components/: UI components
+- app/types.ts: TypeScript type definitions
+
+WHEN ADDING A NEW FEATURE
+=========================
+
+1. IDENTIFY THE FEATURE TYPE
+   - UI Component: Visual elements
+   - State Management: Data handling and business logic
+   - Utility Function: Reusable helper functions
+   - Data Structure: New data types or initial data
+   - Hook: Custom stateful logic
+
+2. FOLLOW THE APPROPRIATE PATTERN BELOW
+
+ADDING A NEW UI COMPONENT
+=========================
+
+Location: app/components/
+File naming: PascalCase.tsx (e.g., NewFeature.tsx)
+
+Steps:
+1. Create the component file in app/components/
+2. If it's a complex component with sub-components, create a subfolder
+3. Import necessary utilities from app/utils/
+4. Use existing hooks from app/hooks/ for state management
+5. Export the component as default
+6. Import and use in page.tsx or other components
+
+Example:
+```typescript
+// app/components/NewFeature.tsx
+import React from 'react';
+import { someUtility } from '../utils';
+
+export default function NewFeature() {
+  return <div>New Feature</div>;
+}
+```
+
+Then in page.tsx:
+```typescript
+import NewFeature from './components/NewFeature';
+// Add to JSX
+```
+
+ADDING STATE MANAGEMENT (HOOK)
+==============================
+
+Location: app/hooks/
+File naming: useFeatureName.ts
+
+Steps:
+1. Create "use client"; at the top
+2. Import necessary React hooks and utilities
+3. Define the hook function
+4. Return an object with state and functions
+5. Use in page.tsx or other components
+
+Example:
+```typescript
+// app/hooks/useNewFeature.ts
+"use client";
+
+import { useState } from 'react';
+
+export function useNewFeature() {
+  const [state, setState] = useState(initialValue);
+
+  function doSomething() {
+    // logic here
+  }
+
+  return {
+    state,
+    doSomething
+  };
+}
+```
+
+Then in page.tsx:
+```typescript
+import { useNewFeature } from './hooks/useNewFeature';
+
+const newFeature = useNewFeature();
+// Use newFeature.state, newFeature.doSomething()
+```
+
+ADDING A UTILITY FUNCTION
+=========================
+
+Location: app/utils/ (choose appropriate subfolder)
+File naming: featureUtils.ts or add to existing file
+
+Steps:
+1. Identify the category:
+   - Date/time functions → dateUtils.ts or timeUtils.ts
+   - General helpers → generalUtils.ts
+   - Event-specific → eventUtils.ts
+   - Constants → constants.ts
+2. Export the function
+3. Import from app/utils/index.ts if needed
+
+Example:
+```typescript
+// app/utils/generalUtils.ts
+export function newUtility(param: Type): ReturnType {
+  // implementation
+}
+```
+
+Then import: import { newUtility } from '../utils';
+
+ADDING INITIAL DATA OR CONSTANTS
+================================
+
+Location: app/data/
+File naming: featureData.ts
+
+Steps:
+1. Create file in app/data/
+2. Export the data
+3. Import in hooks or components as needed
+
+Example:
+```typescript
+// app/data/newFeatureData.ts
+export const newFeatureData = {
+  // data here
+};
+```
+
+Then import: import { newFeatureData } from '../data/newFeatureData';
+
+ADDING NEW DATA TYPES
+====================
+
+Location: app/types.ts
+
+Steps:
+1. Add interface or type to types.ts
+2. Use throughout the codebase
+
+Example:
+```typescript
+// app/types.ts
+export interface NewFeatureType {
+  id: string;
+  name: string;
+}
+```
+
+MODIFYING EXISTING FEATURES
+===========================
+
+1. UI Changes: Modify the component in app/components/
+2. Logic Changes: Modify the corresponding hook in app/hooks/
+3. Data Changes: Modify in app/data/ or app/hooks/
+4. Utils Changes: Modify in app/utils/
+
+BEST PRACTICES
+==============
+
+1. Keep components focused on UI rendering
+2. Put business logic in hooks
+3. Use utilities for reusable functions
+4. Maintain TypeScript types
+5. Test your changes by running: npm run build
+6. Follow existing naming conventions
+7. Add "use client" to hooks and components using React hooks
+
+COMMON PATTERNS
+===============
+
+- For modal dialogs: Create in app/components/Modals/
+- For form handling: Use custom hooks
+- For API calls: Add to hooks (when backend is ready)
+- For styling: Use existing CSS classes or add to SmartScheduler.css
+
+If you need to modify page.tsx:
+- Add new hook calls at the top
+- Pass data to components via props
+- Add new components to the JSX
+
+REMEMBER: Always run npm run build after changes to catch TypeScript errors!
