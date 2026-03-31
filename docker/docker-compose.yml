@@ -41,6 +41,7 @@ services:
       AGENT_LLM_PROVIDER: ollama
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_MODEL: llama3.2
+      OLLAMA_HOST: ollama:11434
       PROLOG_MODE: subprocess
       PROLOG_PATH: /app/prolog
     ports:
@@ -57,25 +58,23 @@ services:
       retries: 3
 
   # ==========================================================================
-  # Ollama (Local LLM) - Optional
+  # Ollama (Local LLM)
   # ==========================================================================
-  # Uncomment to run Ollama in Docker (requires GPU or CPU mode)
-  # ollama:
-  #   image: ollama/ollama:latest
-  #   container_name: schedule-assistant-ollama
-  #   restart: unless-stopped
-  #   ports:
-  #     - "11434:11434"
-  #   volumes:
-  #     - ollama_data:/root/.ollama
-  #   # Uncomment for GPU support (NVIDIA)
-  #   # deploy:
-  #   #   resources:
-  #   #     reservations:
-  #   #       devices:
-  #   #         - driver: nvidia
-  #   #           count: 1
-  #   #           capabilities: [gpu]
+  ollama:
+    image: ollama/ollama:latest
+    container_name: schedule-assistant-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   # ==========================================================================
   # Prolog Service - Optional (alternative to subprocess mode)
@@ -94,5 +93,5 @@ services:
 volumes:
   postgres_data:
     driver: local
-  # ollama_data:
-  #   driver: local
+  ollama_data:
+    driver: local

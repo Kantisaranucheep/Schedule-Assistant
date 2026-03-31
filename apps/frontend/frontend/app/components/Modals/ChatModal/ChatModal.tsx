@@ -1,5 +1,9 @@
 import React from "react";
-import { ChatSession } from "../../types";
+import { ChatSession } from "../../../types";
+import {
+    handleFormSubmit,
+    handleInputKeyDown,
+} from "./chatModalHelper";
 
 interface ChatModalProps {
     isOpen: boolean;
@@ -13,7 +17,11 @@ interface ChatModalProps {
     pushUserMessage: (s: string) => void;
     newSession: () => void;
     isTyping: boolean;
+    ttsEnabled: boolean;
+    toggleTts: () => void;
     chatEndRef: React.RefObject<HTMLDivElement | null>;
+    isRecording: boolean;
+    toggleRecording: () => void;
 }
 
 export default function ChatModal({
@@ -28,7 +36,11 @@ export default function ChatModal({
     pushUserMessage,
     newSession,
     isTyping,
+    ttsEnabled,
+    toggleTts,
     chatEndRef,
+    isRecording,
+    toggleRecording,
 }: ChatModalProps) {
     return (
         <div
@@ -123,15 +135,27 @@ export default function ChatModal({
                             <span className="fw-bold">Scheduler Agent</span>
                         </div>
 
-                        <button
-                            type="button"
-                            className="btn btn-sm btn-outline-secondary rounded-3 shadow-sm"
-                            style={{ height: 28, width: 28, padding: 0, lineHeight: 1 }}
-                            onClick={onClose}
-                            aria-label="Close chat"
-                        >
-                            ×
-                        </button>
+                        <div className="d-flex gap-2">
+                            <button
+                                type="button"
+                                className={`btn btn-sm rounded-3 shadow-sm ${ttsEnabled ? "btn-primary" : "btn-outline-secondary"}`}
+                                style={{ height: 28, width: 28, padding: 0, lineHeight: 1 }}
+                                onClick={toggleTts}
+                                aria-label="Toggle TTS"
+                            >
+                                {ttsEnabled ? "🔊" : "🔇"}
+                            </button>
+
+                            <button
+                                type="button"
+                                className="btn btn-sm btn-outline-secondary rounded-3 shadow-sm"
+                                style={{ height: 28, width: 28, padding: 0, lineHeight: 1 }}
+                                onClick={onClose}
+                                aria-label="Close chat"
+                            >
+                                ×
+                            </button>
+                        </div>
                     </div>
 
                     <div
@@ -188,10 +212,15 @@ export default function ChatModal({
                     <form
                         className="px-3 border-top d-flex align-items-center gap-2 bg-light flex-shrink-0"
                         style={{ height: 80, boxSizing: "border-box" }}
-                        onSubmit={(e) => {
-                            e.preventDefault();
-                            pushUserMessage(chatInput);
-                        }}
+                        onSubmit={(e) =>
+                            handleFormSubmit(
+                                e,
+                                chatInput,
+                                activeSession,
+                                pushUserMessage,
+                                setChatInput,
+                            )
+                        }
                     >
                         <input
                             className="form-control rounded-pill shadow-sm border-secondary-subtle"
@@ -199,11 +228,35 @@ export default function ChatModal({
                             style={{ height: 44 }}
                             value={chatInput}
                             onChange={(e) => setChatInput(e.target.value)}
+                            onKeyDown={(e) =>
+                                handleInputKeyDown(e, (formEvent) =>
+                                    handleFormSubmit(
+                                        formEvent,
+                                        chatInput,
+                                        activeSession,
+                                        pushUserMessage,
+                                        setChatInput,
+                                    ),
+                                )
+                            }
                         />
+
+                        <button
+                            className={`btn rounded-circle shadow-sm d-flex align-items-center justify-content-center ${isRecording ? "btn-danger" : "btn-primary"}`}
+                            style={{ width: 44, height: 44 }}
+                            type="button"
+                            id="btn-send-mic"
+                            onClick={toggleRecording}
+                            aria-label="Toggle Recording"
+                        >
+                            {isRecording ? "⏹️" : "🎤"}
+                        </button>
+
                         <button
                             className="btn btn-primary rounded-circle shadow-sm d-flex align-items-center justify-content-center"
                             style={{ width: 44, height: 44 }}
                             type="submit"
+                            id="btn-send"
                             aria-label="Send"
                         >
                             ➤

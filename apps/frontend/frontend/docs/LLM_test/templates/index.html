@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Agent — Intent Assistant</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-left">
+                <div class="logo">🤖</div>
+                <div>
+                    <h1>Intent Agent</h1>
+                    <p class="subtitle">Powered by Ollama · gemma3:4b</p>
+                </div>
+            </div>
+            <div class="header-controls">
+                <button id="btn-speaker" class="icon-btn" title="Toggle voice responses">
+                    🔇
+                </button>
+                <button id="btn-clear" class="icon-btn" title="Clear conversation">
+                    🗑️
+                </button>
+            </div>
+        </header>
+
+        <div class="main-body">
+            <!-- Chat panel -->
+            <section class="chat-panel">
+                <div id="chat-messages" class="messages-container">
+                    <div class="welcome-message">
+                        <p>👋 Hi! I can help you create events, set reminders, send messages, or create tasks.</p>
+                        <p>Try saying: <em>"Make me an appointment tomorrow at 9 AM"</em></p>
+                    </div>
+                </div>
+
+                <!-- Input bar -->
+                <div class="input-bar">
+                    <button id="btn-mic" class="mic-btn" title="Hold to speak">
+                        🎤
+                    </button>
+                    <input
+                        type="text"
+                        id="input-text"
+                        placeholder="Type your message or click 🎤 to speak..."
+                        autocomplete="off"
+                    >
+                    <button id="btn-send" class="send-btn" title="Send">
+                        ➤
+                    </button>
+                </div>
+            </section>
+
+            <!-- Intent JSON panel -->
+            <aside class="intent-panel">
+                <h2>📋 Extracted Intent</h2>
+                <div id="intent-content" class="intent-content">
+                    <p class="placeholder-text">No intent extracted yet. Complete a conversation to see the JSON output here.</p>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
