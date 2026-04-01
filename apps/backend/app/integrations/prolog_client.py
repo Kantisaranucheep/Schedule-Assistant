@@ -1,314 +1,202 @@
-# apps/backend/app/integrations/prolog_client.py
-"""Prolog integration client - supports subprocess and service modes."""
+"""Prolog client for constraint checking via subprocess."""
 
 import asyncio
 import json
 import os
-import subprocess
-from abc import ABC, abstractmethod
+from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-import httpx
+from typing import Any, Dict, Optional
 
 from app.agent.config import get_agent_settings
-from app.agent.exceptions import PrologExecutionError
 
 
-class BasePrologClient(ABC):
-    """Abstract base class for Prolog clients."""
+class PrologClient:
+    """Client for interacting with Prolog knowledge base."""
 
-    @abstractmethod
-    async def query(self, query: str) -> Any:
-        """Execute a Prolog query.
-
-        Args:
-            query: Prolog query string
-
-        Returns:
-            Query result
-        """
-        pass
-
-    @abstractmethod
-    async def assert_fact(self, fact: str) -> bool:
-        """Assert a new fact into the knowledge base.
+    def __init__(
+        self,
+        kb_path: Optional[str] = None,
+        mode: str = "subprocess",
+        service_url: str = "http://localhost:8081",
+    ):
+        """Initialize Prolog client.
 
         Args:
-            fact: Prolog fact to assert
-
-        Returns:
-            True if successful
-        """
-        pass
-
-    @abstractmethod
-    async def retract_fact(self, fact: str) -> bool:
-        """Retract a fact from the knowledge base.
-
-        Args:
-            fact: Prolog fact to retract
-
-        Returns:
-            True if successful
-        """
-        pass
-
-    @abstractmethod
-    async def is_available(self) -> bool:
-        """Check if Prolog service is available."""
-        pass
-
-
-class SubprocessPrologClient(BasePrologClient):
-    """Prolog client using swipl subprocess.
-
-    This client executes Prolog queries by spawning swipl processes.
-    Suitable for local development when swipl is installed.
-    """
-
-    def __init__(self, kb_path: Optional[str] = None):
-        """Initialize subprocess client.
-
-        Args:
-            kb_path: Path to Prolog knowledge base directory
+            kb_path: Path to Prolog KB directory
+            mode: "subprocess" or "service"
+            service_url: URL for Prolog service (if mode="service")
         """
         settings = get_agent_settings()
+        self.mode = mode or settings.prolog_mode
+        self.service_url = service_url or settings.prolog_service_url
 
         # Resolve KB path
         if kb_path:
             self.kb_path = Path(kb_path)
         else:
-            # Default: apps/prolog relative to workspace root
-            backend_dir = Path(__file__).parent.parent.parent
-            self.kb_path = backend_dir.parent.parent / "prolog"
+            # Default: relative to backend app
+            self.kb_path = Path(__file__).parent.parent.parent.parent / "prolog"
 
         self.main_file = self.kb_path / "main.pl"
 
-    async def query(self, query: str) -> Any:
-        """Execute a Prolog query via subprocess.
+    async def query(self, query_str: str) -> Dict[str, Any]:
+        """Execute a Prolog query.
 
         Args:
-            query: Prolog query (without trailing period)
+            query_str: Prolog query string
 
         Returns:
-            Query result as parsed JSON or string
+            Query result as dictionary
         """
-        # Ensure query ends with period
-        if not query.strip().endswith("."):
-            query = query.strip() + "."
+        if self.mode == "service":
+            return await self._query_service(query_str)
+        return await self._query_subprocess(query_str)
 
-        # Build swipl command
-        # Use -g to run query and halt
-        cmd = [
-            "swipl",
-            "-s", str(self.main_file),
-            "-g", f"({query}), halt",
-            "-t", "halt(1)",  # Exit with 1 if goal fails
-        ]
+    async def _query_subprocess(self, query_str: str) -> Dict[str, Any]:
+        """Execute query via SWI-Prolog subprocess.
 
-        try:
-            # Run in thread pool to avoid blocking
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                lambda: subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    cwd=str(self.kb_path),
+        Args:
+            query_str: Prolog query
+
+        Returns:
+            Query result
+        """
+        if not self.main_file.exists():
+            return {
+                "success": False,
+                "error": f"Prolog KB not found at {self.main_file}",
+            }
+
+        # Build SWI-Prolog command
+        # Use JSON output for structured results
+        prolog_cmd = f"""
+            consult('{self.main_file.as_posix()}'),
+            catch(
+                (
+                    {query_str},
+                    writeln('SUCCESS')
                 ),
-            )
-
-            if result.returncode == 0:
-                output = result.stdout.strip()
-                # Try to parse as JSON if it looks like JSON
-                if output.startswith("{") or output.startswith("["):
-                    try:
-                        return json.loads(output)
-                    except json.JSONDecodeError:
-                        pass
-                return {"success": True, "output": output}
-            else:
-                return {
-                    "success": False,
-                    "error": result.stderr.strip() or "Query failed",
-                }
-
-        except subprocess.TimeoutExpired:
-            raise PrologExecutionError(query, "Query timeout")
-        except FileNotFoundError:
-            raise PrologExecutionError(query, "swipl not found - is SWI-Prolog installed?")
-        except Exception as e:
-            raise PrologExecutionError(query, str(e))
-
-    async def assert_fact(self, fact: str) -> bool:
-        """Assert a fact via subprocess."""
-        query = f"assertz({fact})"
-        result = await self.query(query)
-        return result.get("success", False)
-
-    async def retract_fact(self, fact: str) -> bool:
-        """Retract a fact via subprocess."""
-        query = f"retract({fact})"
-        result = await self.query(query)
-        return result.get("success", False)
-
-    async def is_available(self) -> bool:
-        """Check if swipl is available."""
-        try:
-            result = subprocess.run(
-                ["swipl", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            return result.returncode == 0
-        except Exception:
-            return False
-
-
-class ServicePrologClient(BasePrologClient):
-    """Prolog client using HTTP service.
-
-    This client communicates with a Prolog microservice via HTTP.
-    Suitable for production deployments.
-    """
-
-    def __init__(self, service_url: Optional[str] = None):
-        """Initialize service client.
-
-        Args:
-            service_url: Prolog service base URL
+                Error,
+                (
+                    format('ERROR: ~w~n', [Error])
+                )
+            ),
+            halt.
         """
-        settings = get_agent_settings()
-        self.service_url = service_url or settings.prolog_service_url
 
-    async def query(self, query: str) -> Any:
-        """Execute a Prolog query via HTTP service.
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "swipl",
+                "-q",
+                "-g",
+                prolog_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(self.kb_path),
+            )
+
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=10.0)
+
+            output = stdout.decode("utf-8").strip()
+            error = stderr.decode("utf-8").strip()
+
+            if "SUCCESS" in output:
+                return {"success": True, "output": output}
+            elif "ERROR" in output or error:
+                return {"success": False, "error": error or output}
+            else:
+                return {"success": True, "output": output}
+
+        except asyncio.TimeoutError:
+            return {"success": False, "error": "Prolog query timed out"}
+        except FileNotFoundError:
+            return {"success": False, "error": "SWI-Prolog (swipl) not found in PATH"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def _query_service(self, query_str: str) -> Dict[str, Any]:
+        """Execute query via Prolog HTTP service.
 
         Args:
-            query: Prolog query string
+            query_str: Prolog query
 
         Returns:
-            Query result from service
+            Query result
         """
+        import httpx
+
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{self.service_url}/query",
-                    json={"query": query},
+                    json={"query": query_str},
+                    timeout=10.0,
                 )
                 response.raise_for_status()
                 return response.json()
-        except httpx.ConnectError:
-            raise PrologExecutionError(query, "Prolog service unavailable")
-        except httpx.HTTPStatusError as e:
-            raise PrologExecutionError(query, f"Service error: {e.response.status_code}")
         except Exception as e:
-            raise PrologExecutionError(query, str(e))
+            return {"success": False, "error": str(e)}
 
-    async def assert_fact(self, fact: str) -> bool:
-        """Assert a fact via HTTP service."""
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.post(
-                    f"{self.service_url}/assert",
-                    json={"fact": fact},
-                )
-                response.raise_for_status()
-                return response.json().get("success", False)
-        except Exception:
-            return False
+    async def check_overlap(
+        self,
+        calendar_id: str,
+        start_time: str,
+        end_time: str,
+        exclude_event_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Check for scheduling conflicts.
 
-    async def retract_fact(self, fact: str) -> bool:
-        """Retract a fact via HTTP service."""
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.post(
-                    f"{self.service_url}/retract",
-                    json={"fact": fact},
-                )
-                response.raise_for_status()
-                return response.json().get("success", False)
-        except Exception:
-            return False
+        Args:
+            calendar_id: Calendar ID
+            start_time: Event start (ISO format)
+            end_time: Event end (ISO format)
+            exclude_event_id: Event to exclude from check
 
-    async def is_available(self) -> bool:
-        """Check if Prolog service is available."""
-        try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                response = await client.get(f"{self.service_url}/health")
-                return response.status_code == 200
-        except Exception:
-            return False
+        Returns:
+            Conflict check result
+        """
+        if exclude_event_id:
+            query = f"check_event_conflicts('{calendar_id}', '{start_time}', '{end_time}', '{exclude_event_id}', Result)"
+        else:
+            query = f"check_overlap('{calendar_id}', '{start_time}', '{end_time}', Result)"
 
+        return await self.query(query)
 
-class MockPrologClient(BasePrologClient):
-    """Mock Prolog client for testing."""
+    async def find_free_slots(
+        self,
+        calendar_id: str,
+        start_date: str,
+        end_date: str,
+        duration_minutes: int,
+    ) -> Dict[str, Any]:
+        """Find available time slots.
 
-    def __init__(self):
-        self.facts: List[str] = []
+        Args:
+            calendar_id: Calendar ID
+            start_date: Start of range (YYYY-MM-DD)
+            end_date: End of range (YYYY-MM-DD)
+            duration_minutes: Required slot duration
 
-    async def query(self, query: str) -> Any:
-        """Return mock query result."""
-        # Simple mock responses based on query content
-        if "check_overlap" in query:
-            return {"success": True, "has_overlap": False, "conflicts": []}
-        elif "find_free_slots" in query:
-            return {
-                "success": True,
-                "slots": [
-                    {"start": "09:00", "end": "10:00"},
-                    {"start": "14:00", "end": "15:00"},
-                ],
-            }
-        return {"success": True, "result": "mock"}
-
-    async def assert_fact(self, fact: str) -> bool:
-        """Add fact to mock knowledge base."""
-        self.facts.append(fact)
-        return True
-
-    async def retract_fact(self, fact: str) -> bool:
-        """Remove fact from mock knowledge base."""
-        if fact in self.facts:
-            self.facts.remove(fact)
-            return True
-        return False
+        Returns:
+            Free slots result
+        """
+        query = f"find_free_slots('{calendar_id}', '{start_date}', '{end_date}', {duration_minutes}, Slots)"
+        return await self.query(query)
 
     async def is_available(self) -> bool:
-        """Mock client is always available."""
-        return True
+        """Check if Prolog is available.
+
+        Returns:
+            True if Prolog can be reached
+        """
+        try:
+            result = await self.query("true")
+            return result.get("success", False)
+        except Exception:
+            return False
 
 
-# Client instance cache
-_prolog_client: Optional[BasePrologClient] = None
-
-
-def get_prolog_client() -> BasePrologClient:
-    """Factory function to get the appropriate Prolog client.
-
-    Returns:
-        Configured Prolog client based on settings
-    """
-    global _prolog_client
-
-    if _prolog_client is not None:
-        return _prolog_client
-
-    settings = get_agent_settings()
-
-    if settings.prolog_mode == "service":
-        _prolog_client = ServicePrologClient()
-    else:
-        _prolog_client = SubprocessPrologClient()
-
-    return _prolog_client
-
-
-def reset_prolog_client() -> None:
-    """Reset the cached Prolog client (useful for testing)."""
-    global _prolog_client
-    _prolog_client = None
+@lru_cache
+def get_prolog_client() -> PrologClient:
+    """Get cached Prolog client instance."""
+    return PrologClient()

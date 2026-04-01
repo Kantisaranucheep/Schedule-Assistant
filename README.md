@@ -1,54 +1,180 @@
 # Schedule Assistant
 
-A monorepo project for a Schedule Assistant application with AI-powered scheduling capabilities.
+An AI-powered scheduling assistant with natural language processing for calendar management.
 
-## Project Structure
+---
 
-```
-schedule-assistant/
-├── apps/
-│   ├── frontend/          # Next.js frontend (placeholder)
-│   └── backend/           # FastAPI backend
-│       ├── app/
-│       │   ├── core/      # Config, database setup
-│       │   ├── models/    # SQLAlchemy ORM models
-│       │   ├── schemas/   # Pydantic schemas
-│       │   ├── routers/   # API endpoints
-│       │   └── services/  # Business logic
-│       └── alembic/       # Database migrations
-├── packages/
-│   └── db/                # Shared database utilities
-├── docker/                # Docker configuration
-└── docs/                  # Documentation
+## 🚀 Quick Start (Docker - Recommended)
+
+### Prerequisites
+
+1. **Docker Desktop**: https://www.docker.com/products/docker-desktop
+2. **Node.js 18+**: https://nodejs.org/
+3. **Git**: https://git-scm.com/
+
+### Step 1: Clone the Repository
+
+```bash
+git clone <repository-url>
+cd Schedule-Assistant
 ```
 
-## Tech Stack
-
-- **Frontend**: Next.js (placeholder)
-- **Backend**: FastAPI + Uvicorn
-- **Database**: PostgreSQL
-- **ORM**: SQLAlchemy 2.0 (async with asyncpg)
-- **Migrations**: Alembic
-- **Validation**: Pydantic v2
-
-## Prerequisites
-
-- Python 3.11+
-- Docker & Docker Compose
-- Node.js 18+ (for frontend)
-
-## Getting Started
-
-### 1. Start PostgreSQL Database
+### Step 2: Start Database, Backend & LLM (Docker)
 
 ```bash
 cd docker
-docker compose up -d
+docker-compose up -d postgres backend ollama
 ```
 
-This will start PostgreSQL on port 5432 with persistent volume.
+Wait ~30 seconds for containers to be healthy.
 
-### 2. Setup Backend
+### Step 3: Run Database Migrations
+
+```bash
+docker exec -it schedule-assistant-api alembic upgrade head
+```
+
+### Step 4: Seed Demo Data
+
+```bash
+docker exec -it schedule-assistant-api python -m app.seed
+```
+
+### Step 5: Pull the LLM Model (First Time Only)
+
+```bash
+docker exec -it schedule-assistant-ollama ollama pull llama3.2
+```
+
+### Step 6: Start Frontend
+
+```bash
+cd apps/frontend/frontend
+npm install
+npm run dev
+```
+
+### 🎉 Done!
+
+| Service | URL |
+|---------|-----|
+| **Frontend** | http://localhost:3000 |
+| **Backend API** | http://localhost:8000 |
+| **API Docs (Swagger)** | http://localhost:8000/docs |
+| **Health Check** | http://localhost:8000/health |
+
+---
+
+## 📁 Project Structure
+
+```
+Schedule-Assistant/
+├── apps/
+│   ├── frontend/           # Next.js frontend
+│   │   └── frontend/
+│   │       ├── app/        # React components & pages
+│   │       └── package.json
+│   ├── backend/            # FastAPI backend
+│   │   ├── app/
+│   │   │   ├── agent/      # LLM intent parsing & execution
+│   │   │   ├── core/       # Config, database setup
+│   │   │   ├── models/     # SQLAlchemy ORM models
+│   │   │   ├── schemas/    # Pydantic schemas
+│   │   │   ├── routers/    # API endpoints
+│   │   │   ├── services/   # Business logic
+│   │   │   └── integrations/ # Prolog client
+│   │   └── alembic/        # Database migrations
+│   └── prolog/             # Constraint logic (scheduling rules)
+├── docker/                 # Docker Compose configuration
+└── docs/                   # Documentation
+```
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS |
+| **Backend** | FastAPI, Uvicorn, Python 3.11 |
+| **Database** | PostgreSQL 16, SQLAlchemy 2.0 (async) |
+| **LLM** | Ollama (llama3.2), optional Gemini |
+| **Constraint Logic** | SWI-Prolog |
+| **Migrations** | Alembic |
+
+---
+
+## 📖 API Endpoints
+
+### Chat (Main Endpoint)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/agent/chat` | Send message to AI assistant |
+| GET | `/agent/health` | Check LLM availability |
+
+### Calendars
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/calendars?user_id=` | List user calendars |
+| POST | `/calendars` | Create calendar |
+| GET | `/calendars/{id}` | Get calendar |
+| PATCH | `/calendars/{id}` | Update calendar |
+| DELETE | `/calendars/{id}` | Delete calendar |
+
+### Events
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/events?calendar_id=` | List events |
+| POST | `/events` | Create event |
+| GET | `/events/{id}` | Get event |
+| PATCH | `/events/{id}` | Update event |
+| DELETE | `/events/{id}` | Delete event |
+| GET | `/events/conflicts/check` | Check for conflicts |
+
+### Availability
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/availability/free-slots` | Find free time slots |
+
+### Settings
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/settings/{user_id}` | Get user settings |
+| POST | `/settings` | Create settings |
+| PATCH | `/settings/{user_id}` | Update settings |
+
+---
+
+## 🐳 Docker Commands
+
+```bash
+# Start all services
+cd docker
+docker-compose up -d postgres backend ollama
+
+# Check container status
+docker ps
+
+# View logs
+docker logs schedule-assistant-api -f
+docker logs schedule-assistant-ollama -f
+docker logs schedule-assistant-db -f
+
+# Restart services
+docker-compose restart
+
+# Stop all services
+docker-compose down
+
+# Stop and remove all data (fresh start)
+docker-compose down -v
+```
+
+---
+
+## 💻 Local Development (Without Docker)
+
+### Backend
 
 ```bash
 cd apps/backend
@@ -56,106 +182,186 @@ cd apps/backend
 # Create virtual environment
 python -m venv .venv
 
-# Activate virtual environment
-# Windows PowerShell:
+# Activate (Windows PowerShell)
 .\.venv\Scripts\Activate.ps1
-# Windows CMD:
-.\.venv\Scripts\activate.bat
-# Linux/Mac:
+
+# Activate (Linux/Mac)
 source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
-```
 
-### 3. Configure Environment
+# Copy environment config
+copy .env.example .env
 
-```bash
-# Copy example env file (from repo root)
-cp .env.example .env
-
-# Edit .env if needed (defaults work with docker-compose)
-```
-
-### 4. Run Database Migrations
-
-```bash
-cd apps/backend
+# Run migrations
 alembic upgrade head
-```
 
-### 5. Seed Demo Data
-
-```bash
-cd apps/backend
+# Seed data
 python -m app.seed
-```
 
-This creates:
-- Demo user (demo@example.com)
-- Default calendar (Personal)
-- Event types: Meeting, Class, Gym
-
-### 6. Start Backend Server
-
-```bash
-cd apps/backend
+# Start server
 uvicorn app.main:app --reload --port 8000
 ```
 
-### 7. Access API Documentation
+### Frontend
 
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-- **Health Check**: http://localhost:8000/health
+```bash
+cd apps/frontend/frontend
 
-## API Endpoints
+# Install dependencies
+npm install
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Health check |
-| GET | `/calendars` | List calendars for user |
-| POST | `/calendars` | Create calendar |
-| GET | `/events` | List events (with date range) |
-| POST | `/events` | Create event |
-| PUT | `/events/{id}` | Update event |
-| DELETE | `/events/{id}` | Delete event |
-| GET | `/availability` | Get free time slots |
-| POST | `/chat/sessions` | Create chat session |
-| GET | `/chat/sessions` | List chat sessions |
-| GET | `/chat/sessions/{id}/messages` | Get messages |
-| POST | `/chat/sessions/{id}/messages` | Add message |
-| GET | `/settings` | Get user settings |
-| PUT | `/settings` | Update user settings |
+# Start dev server
+npm run dev
+```
 
-## Development
+### Ollama (Local LLM)
 
-### Running Tests
+```bash
+# Install Ollama: https://ollama.ai/download
+
+# Pull model
+ollama pull llama3.2
+
+# Run (default port 11434)
+ollama serve
+```
+
+---
+
+## ⚙️ Environment Variables
+
+Create `.env` file in `apps/backend/`:
+
+```env
+# App
+APP_NAME=Schedule Assistant
+DEBUG=true
+SECRET_KEY=change-me-in-production
+
+# Database
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5433/schedule_assistant
+
+# CORS
+CORS_ORIGINS=http://localhost:3000
+
+# Defaults
+DEFAULT_TIMEZONE=Asia/Bangkok
+DEFAULT_WORKING_HOURS_START=09:00
+DEFAULT_WORKING_HOURS_END=18:00
+
+# LLM (Ollama)
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.2
+OLLAMA_TIMEOUT=60
+
+# Gemini (optional)
+AGENT_ENABLE_GEMINI=false
+GEMINI_API_KEY=
+
+# Prolog
+PROLOG_MODE=subprocess
+```
+
+---
+
+## 🔄 Database Migrations
+
+```bash
+cd apps/backend
+
+# Create new migration
+alembic revision --autogenerate -m "Description"
+
+# Apply migrations
+alembic upgrade head
+
+# Rollback one step
+alembic downgrade -1
+
+# View migration history
+alembic history
+```
+
+---
+
+## 🧪 Testing
 
 ```bash
 cd apps/backend
 pytest
 ```
 
-### Creating New Migration
+---
 
+## ⚠️ Troubleshooting
+
+### Docker daemon not running
+**Error**: `open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified`
+
+**Solution**: Start Docker Desktop and wait until it's fully running.
+
+---
+
+### Port already in use
+**Error**: `Bind for 0.0.0.0:5433 failed: port is already allocated`
+
+**Solution**:
 ```bash
-cd apps/backend
-alembic revision --autogenerate -m "Description of changes"
+docker-compose down
+docker-compose up -d postgres backend ollama
 ```
 
-### Stopping Services
+---
 
+### Database tables don't exist
+**Error**: `relation "users" does not exist`
+
+**Solution**:
+```bash
+docker exec -it schedule-assistant-api alembic upgrade head
+```
+
+---
+
+### LLM not responding
+**Error**: `LLM connection failed` or slow responses
+
+**Solution**:
+```bash
+# Check if Ollama is running
+docker logs schedule-assistant-ollama
+
+# Make sure model is pulled
+docker exec -it schedule-assistant-ollama ollama pull llama3.2
+```
+
+---
+
+### Reset everything (fresh start)
 ```bash
 cd docker
-docker compose down
+docker-compose down -v
+docker-compose up -d postgres backend ollama
+
+# Wait 30 seconds, then:
+docker exec -it schedule-assistant-api alembic upgrade head
+docker exec -it schedule-assistant-api python -m app.seed
+docker exec -it schedule-assistant-ollama ollama pull llama3.2
 ```
 
-To also remove the database volume:
-```bash
-docker compose down -v
-```
+---
 
-## License
+## 📝 Demo Credentials
+
+After seeding, you'll have:
+- **User ID**: `00000000-0000-0000-0000-000000000001`
+- **Calendar ID**: `00000000-0000-0000-0000-000000000001`
+- **Email**: `demo@example.com`
+
+---
+
+## 📄 License
 
 MIT

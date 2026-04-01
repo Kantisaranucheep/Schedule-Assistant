@@ -1,8 +1,7 @@
-# schedule-assistant/apps/backend/alembic/versions/001_initial_schema.py
-"""Initial schema - Clean version for Schedule Assistant
+"""Initial schema
 
 Revision ID: 001
-Revises: 
+Revises:
 Create Date: 2024-01-01 00:00:00.000000
 
 """
@@ -20,85 +19,96 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Create users table
+    # Users table
     op.create_table(
         'users',
-        sa.Column('id', postgresql.UUID(as_uuid=True), server_default=sa.text('gen_random_uuid()'), nullable=False),
-        sa.Column('name', sa.Text(), nullable=True),
-        sa.Column('email', sa.Text(), nullable=False),
-        sa.Column('created_at', postgresql.TIMESTAMP(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('email')
+        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column('email', sa.String(255), unique=True, nullable=False, index=True),
+        sa.Column('name', sa.String(255), nullable=False),
+        sa.Column('timezone', sa.String(50), server_default='Asia/Bangkok'),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now()),
     )
 
-    # Create calendars table
+    # User settings table
+    op.create_table(
+        'user_settings',
+        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column('user_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('users.id', ondelete='CASCADE'), unique=True, nullable=False),
+        sa.Column('working_hours_start', sa.String(5), server_default='09:00'),
+        sa.Column('working_hours_end', sa.String(5), server_default='18:00'),
+        sa.Column('buffer_minutes', sa.Integer, server_default='10'),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now()),
+    )
+
+    # Calendars table
     op.create_table(
         'calendars',
-        sa.Column('id', postgresql.UUID(as_uuid=True), server_default=sa.text('gen_random_uuid()'), nullable=False),
-        sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('name', sa.Text(), nullable=False),
-        sa.Column('timezone', sa.Text(), nullable=True),
-        sa.Column('created_at', postgresql.TIMESTAMP(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id')
+        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column('user_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True),
+        sa.Column('name', sa.String(255), server_default='My Calendar'),
+        sa.Column('color', sa.String(7), server_default='#3B82F6'),
+        sa.Column('timezone', sa.String(50), server_default='Asia/Bangkok'),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now()),
     )
 
-    # Create event_types table
+    # Event types table
     op.create_table(
         'event_types',
-        sa.Column('id', postgresql.UUID(as_uuid=True), server_default=sa.text('gen_random_uuid()'), nullable=False),
-        sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('name', sa.Text(), nullable=False),
-        sa.Column('color', sa.Text(), nullable=True),
-        sa.Column('default_duration_min', sa.Integer(), nullable=True),
-        sa.Column('created_at', postgresql.TIMESTAMP(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('user_id', 'name', name='uq_event_types_user_name')
+        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column('name', sa.String(100), unique=True, nullable=False),
+        sa.Column('color', sa.String(7), server_default='#3B82F6'),
+        sa.Column('icon', sa.String(50), server_default='calendar'),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now()),
     )
 
-    # Create events table
+    # Events table
     op.create_table(
         'events',
-        sa.Column('id', postgresql.UUID(as_uuid=True), server_default=sa.text('gen_random_uuid()'), nullable=False),
-        sa.Column('calendar_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('type_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('title', sa.Text(), nullable=False),
-        sa.Column('description', sa.Text(), nullable=True),
-        sa.Column('location', sa.Text(), nullable=True),
-        sa.Column('start_at', postgresql.TIMESTAMP(timezone=True), nullable=False),
-        sa.Column('end_at', postgresql.TIMESTAMP(timezone=True), nullable=False),
-        sa.Column('status', sa.Text(), server_default=sa.text("'confirmed'"), nullable=False),
-        sa.Column('created_by', sa.Text(), server_default=sa.text("'user'"), nullable=False),
-        sa.Column('created_at', postgresql.TIMESTAMP(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.Column('updated_at', postgresql.TIMESTAMP(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.CheckConstraint("status IN ('confirmed', 'tentative', 'cancelled')", name='ck_events_status'),
-        sa.CheckConstraint("created_by IN ('user', 'agent')", name='ck_events_created_by'),
-        sa.CheckConstraint('end_at > start_at', name='ck_events_end_after_start'),
-        sa.ForeignKeyConstraint(['calendar_id'], ['calendars.id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['type_id'], ['event_types.id'], ondelete='SET NULL'),
-        sa.PrimaryKeyConstraint('id')
+        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column('calendar_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('calendars.id', ondelete='CASCADE'), nullable=False, index=True),
+        sa.Column('title', sa.String(255), nullable=False),
+        sa.Column('start_time', sa.DateTime(timezone=True), nullable=False, index=True),
+        sa.Column('end_time', sa.DateTime(timezone=True), nullable=False),
+        sa.Column('all_day', sa.Boolean, server_default='false'),
+        sa.Column('location', sa.String(500), nullable=True),
+        sa.Column('notes', sa.Text, nullable=True),
+        sa.Column('color', sa.String(7), server_default='#3B82F6'),
+        sa.Column('status', sa.String(20), server_default='confirmed'),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now()),
     )
-    op.create_index('ix_events_calendar_start', 'events', ['calendar_id', 'start_at'])
-    op.create_index('ix_events_calendar_start_end', 'events', ['calendar_id', 'start_at', 'end_at'])
 
-    # Insert default test user and calendar for development
-    op.execute("""
-        INSERT INTO users (id, name, email) VALUES 
-        ('00000000-0000-0000-0000-000000000001', 'Test User', 'test@example.com')
-        ON CONFLICT (id) DO NOTHING;
-    """)
-    op.execute("""
-        INSERT INTO calendars (id, user_id, name, timezone) VALUES 
-        ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001', 'My Calendar', 'Asia/Bangkok')
-        ON CONFLICT (id) DO NOTHING;
-    """)
+    # Chat sessions table
+    op.create_table(
+        'chat_sessions',
+        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column('user_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True),
+        sa.Column('title', sa.String(255), server_default='New Chat'),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now()),
+    )
+
+    # Chat messages table
+    op.create_table(
+        'chat_messages',
+        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column('session_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('chat_sessions.id', ondelete='CASCADE'), nullable=False, index=True),
+        sa.Column('role', sa.String(20), nullable=False),
+        sa.Column('text', sa.Text, nullable=False),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now()),
+    )
 
 
 def downgrade() -> None:
-    op.drop_index('ix_events_calendar_start_end', table_name='events')
-    op.drop_index('ix_events_calendar_start', table_name='events')
+    op.drop_table('chat_messages')
+    op.drop_table('chat_sessions')
     op.drop_table('events')
     op.drop_table('event_types')
     op.drop_table('calendars')
+    op.drop_table('user_settings')
     op.drop_table('users')

@@ -1,5 +1,4 @@
-# schedule-assistant/apps/backend/app/core/config.py
-"""Application configuration using pydantic-settings."""
+"""Application configuration from environment variables."""
 
 from functools import lru_cache
 from typing import List
@@ -8,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
+    """Application settings."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -17,23 +16,22 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Database
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/schedule_assistant"
-
-    # Application
+    # App
     app_name: str = "Schedule Assistant"
-    debug: bool = True
-    secret_key: str = "change-me-in-production"
+    debug: bool = False
+    secret_key: str = "dev-secret-change-in-production"
+
+    # Database
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5433/schedule_assistant"
 
     # CORS
     cors_origins: str = "http://localhost:3000"
 
     @property
     def cors_origins_list(self) -> List[str]:
-        """Parse CORS origins from comma-separated string."""
         return [origin.strip() for origin in self.cors_origins.split(",")]
 
-    # Default settings
+    # Defaults
     default_timezone: str = "Asia/Bangkok"
     default_working_hours_start: str = "09:00"
     default_working_hours_end: str = "18:00"

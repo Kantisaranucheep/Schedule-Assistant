@@ -1,23 +1,22 @@
-# schedule-assistant/apps/backend/app/schemas/__init__.py
-"""Pydantic schemas for request/response validation."""
+"""Pydantic schemas for API validation."""
 
-from app.schemas.user import UserBase, UserCreate, UserRead
-from app.schemas.calendar import CalendarBase, CalendarCreate, CalendarRead
-from app.schemas.event_type import EventTypeBase, EventTypeCreate, EventTypeRead
-from app.schemas.event import EventBase, EventCreate, EventUpdate, EventRead
+from .calendar import CalendarCreate, CalendarUpdate, CalendarResponse
+from .event import EventCreate, EventUpdate, EventResponse
+from .chat import ChatRequest, ChatResponse, ChatSessionResponse, ChatMessageResponse
+from .settings import UserSettingsCreate, UserSettingsUpdate, UserSettingsResponse
 
 __all__ = [
-    "UserBase",
-    "UserCreate",
-    "UserRead",
-    "CalendarBase",
     "CalendarCreate",
-    "CalendarRead",
-    "EventTypeBase",
-    "EventTypeCreate",
-    "EventTypeRead",
-    "EventBase",
+    "CalendarUpdate",
+    "CalendarResponse",
     "EventCreate",
     "EventUpdate",
-    "EventRead",
+    "EventResponse",
+    "ChatRequest",
+    "ChatResponse",
+    "ChatSessionResponse",
+    "ChatMessageResponse",
+    "UserSettingsCreate",
+    "UserSettingsUpdate",
+    "UserSettingsResponse",
 ]
