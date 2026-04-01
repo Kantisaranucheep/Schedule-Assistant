@@ -11,7 +11,6 @@ from app.core.db import async_session_maker
 from app.models.user import User
 from app.models.calendar import Calendar
 from app.models.event_type import EventType
-from app.models.user_settings import UserSettings
 
 
 async def seed_database() -> None:
@@ -43,23 +42,6 @@ async def seed_database() -> None:
             db.add(user)
             await db.flush()
             print(f"Created demo user: {user.email} (ID: {user.id})")
-
-        # Check/create user settings
-        settings = await db.get(UserSettings, user.id)
-        if not settings:
-            settings = UserSettings(
-                user_id=user.id,
-                timezone="Asia/Bangkok",
-                default_duration_min=60,
-                buffer_min=10,
-                preferences={
-                    "working_hours_start": "09:00",
-                    "working_hours_end": "18:00",
-                },
-            )
-            db.add(settings)
-            await db.flush()
-            print("Created user settings")
 
         # Check/create default calendar
         result = await db.execute(

@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.event import Event
-from app.models.user_settings import UserSettings
 
 
 @dataclass
@@ -54,22 +53,11 @@ async def get_available_slots(
     """
     settings = get_settings()
 
-    # Get user settings
-    user_settings = await db.get(UserSettings, user_id)
-
-    # Determine timezone and working hours
+    # Determine timezone and working hours from settings
     tz_str = settings.default_timezone
     working_start_str = settings.default_working_hours_start
     working_end_str = settings.default_working_hours_end
     buffer_min = 10
-
-    if user_settings:
-        tz_str = user_settings.timezone or tz_str
-        buffer_min = user_settings.buffer_min or buffer_min
-        # Check preferences for working hours
-        prefs = user_settings.preferences or {}
-        working_start_str = prefs.get("working_hours_start", working_start_str)
-        working_end_str = prefs.get("working_hours_end", working_end_str)
 
     # Parse working hours
     working_start = parse_time(working_start_str)

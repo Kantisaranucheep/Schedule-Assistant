@@ -20,9 +20,6 @@ from app.models import (
     Calendar,
     EventType,
     Event,
-    UserSettings,
-    ChatSession,
-    ChatMessage,
 )
 
 # this is the Alembic Config object

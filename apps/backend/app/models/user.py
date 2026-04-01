@@ -14,8 +14,6 @@ from app.core.db import Base
 if TYPE_CHECKING:
     from app.models.calendar import Calendar
     from app.models.event_type import EventType
-    from app.models.user_settings import UserSettings
-    from app.models.chat_session import ChatSession
 
 
 class User(Base):
@@ -43,10 +41,4 @@ class User(Base):
     )
     event_types: Mapped[List["EventType"]] = relationship(
         "EventType", back_populates="user", cascade="all, delete-orphan"
-    )
-    settings: Mapped["UserSettings"] = relationship(
-        "UserSettings", back_populates="user", cascade="all, delete-orphan", uselist=False
-    )
-    chat_sessions: Mapped[List["ChatSession"]] = relationship(
-        "ChatSession", back_populates="user", cascade="all, delete-orphan"
     )
