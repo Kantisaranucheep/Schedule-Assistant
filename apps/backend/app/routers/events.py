@@ -1,184 +1,136 @@
-# schedule-assistant/apps/backend/app/routers/events.py
-"""Event endpoints."""
+"""Event CRUD endpoints."""
 
-from datetime import datetime, date
-from typing import List
+from datetime import datetime
+from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db import get_db
-from app.models.event import Event
-from app.models.calendar import Calendar
-from app.schemas.event import EventCreate, EventRead, EventUpdate
-from app.services.conflicts import check_event_conflicts
-from app.services.availability import get_available_slots, TimeSlot
+from app.core.database import get_db
+from app.schemas import EventCreate, EventUpdate, EventResponse
+from app.services import EventService
 
 router = APIRouter(prefix="/events", tags=["events"])
 
 
-@router.get("", response_model=List[EventRead])
+@router.get("", response_model=List[EventResponse])
 async def list_events(
     calendar_id: UUID,
-    from_: datetime = Query(..., alias="from"),
-    to: datetime = Query(...),
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
     db: AsyncSession = Depends(get_db),
-) -> List[Event]:
-    """List events within a date range."""
-    result = await db.execute(
-        select(Event)
-        .where(
-            Event.calendar_id == calendar_id,
-            Event.start_at >= from_,
-            Event.end_at <= to,
-        )
-        .order_by(Event.start_at)
-    )
-    return list(result.scalars().all())
+):
+    """Get events for a calendar."""
+    service = EventService(db)
+    return await service.get_by_calendar(calendar_id, start_date, end_date)
 
 
-@router.post("", response_model=EventRead, status_code=status.HTTP_201_CREATED)
-async def create_event(
-    data: EventCreate,
+@router.get("/{event_id}", response_model=EventResponse)
+async def get_event(
+    event_id: UUID,
     db: AsyncSession = Depends(get_db),
-) -> Event:
-    """Create a new event with conflict detection."""
-    # Verify calendar exists
-    calendar = await db.get(Calendar, data.calendar_id)
-    if not calendar:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Calendar {data.calendar_id} not found",
-        )
-
-    # Check for conflicts
-    conflicts = await check_event_conflicts(
-        db=db,
-        calendar_id=data.calendar_id,
-        start_at=data.start_at,
-        end_at=data.end_at,
-        exclude_event_id=None,
-    )
-    if conflicts:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "message": "Event conflicts with existing events",
-                "conflicting_event_ids": [str(e.id) for e in conflicts],
-            },
-        )
-
-    event = Event(
-        calendar_id=data.calendar_id,
-        type_id=data.type_id,
-        title=data.title,
-        description=data.description,
-        location=data.location,
-        start_at=data.start_at,
-        end_at=data.end_at,
-        status=data.status,
-        created_by=data.created_by,
-    )
-    db.add(event)
-    await db.flush()
-    await db.refresh(event)
+):
+    """Get a specific event."""
+    service = EventService(db)
+    event = await service.get(event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
     return event
 
 
-@router.put("/{event_id}", response_model=EventRead)
+@router.post("", response_model=EventResponse, status_code=201)
+async def create_event(
+    data: EventCreate,
+    check_conflicts: bool = Query(True),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new event."""
+    service = EventService(db)
+
+    if check_conflicts:
+        conflicts = await service.check_conflicts(
+            data.calendar_id, data.start_time, data.end_time
+        )
+        if conflicts:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Event conflicts with existing events",
+                    "conflicts": [
+                        {"id": str(e.id), "title": e.title} for e in conflicts
+                    ],
+                },
+            )
+
+    return await service.create(data)
+
+
+@router.patch("/{event_id}", response_model=EventResponse)
 async def update_event(
     event_id: UUID,
     data: EventUpdate,
+    check_conflicts: bool = Query(True),
     db: AsyncSession = Depends(get_db),
-) -> Event:
-    """Update an event with conflict detection."""
-    event = await db.get(Event, event_id)
+):
+    """Update an event."""
+    service = EventService(db)
+
+    if check_conflicts and (data.start_time or data.end_time):
+        existing = await service.get(event_id)
+        if existing:
+            start = data.start_time or existing.start_time
+            end = data.end_time or existing.end_time
+            conflicts = await service.check_conflicts(
+                existing.calendar_id, start, end, exclude_event_id=event_id
+            )
+            if conflicts:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": "Event conflicts with existing events",
+                        "conflicts": [
+                            {"id": str(e.id), "title": e.title} for e in conflicts
+                        ],
+                    },
+                )
+
+    event = await service.update(event_id, data)
     if not event:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Event {event_id} not found",
-        )
-
-    # Determine new start/end times
-    new_start = data.start_at if data.start_at is not None else event.start_at
-    new_end = data.end_at if data.end_at is not None else event.end_at
-
-    # Validate end > start
-    if new_end <= new_start:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="end_at must be after start_at",
-        )
-
-    # Check for conflicts (exclude this event)
-    conflicts = await check_event_conflicts(
-        db=db,
-        calendar_id=event.calendar_id,
-        start_at=new_start,
-        end_at=new_end,
-        exclude_event_id=event_id,
-    )
-    if conflicts:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "message": "Event conflicts with existing events",
-                "conflicting_event_ids": [str(e.id) for e in conflicts],
-            },
-        )
-
-    # Update fields
-    update_data = data.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(event, field, value)
-
-    event.updated_at = datetime.utcnow()
-    await db.flush()
-    await db.refresh(event)
+        raise HTTPException(status_code=404, detail="Event not found")
     return event
 
 
-@router.delete("/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{event_id}", status_code=204)
 async def delete_event(
     event_id: UUID,
+    soft: bool = Query(True),
     db: AsyncSession = Depends(get_db),
-) -> None:
-    """Delete an event."""
-    event = await db.get(Event, event_id)
-    if not event:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Event {event_id} not found",
-        )
-    await db.delete(event)
+):
+    """Delete an event (soft delete by default)."""
+    service = EventService(db)
+    deleted = await service.delete(event_id, soft=soft)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Event not found")
 
 
-@router.get("/availability")
-async def get_availability(
+@router.get("/conflicts/check")
+async def check_conflicts(
     calendar_id: UUID,
-    date_param: date = Query(..., alias="date"),
+    start_time: datetime,
+    end_time: datetime,
+    exclude_event_id: Optional[UUID] = Query(None),
     db: AsyncSession = Depends(get_db),
-) -> dict:
-    """Get available time slots for a specific date."""
-    # Verify calendar exists and get user settings
-    calendar = await db.get(Calendar, calendar_id)
-    if not calendar:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Calendar {calendar_id} not found",
-        )
-
-    slots = await get_available_slots(
-        db=db,
-        calendar_id=calendar_id,
-        user_id=calendar.user_id,
-        target_date=date_param,
+):
+    """Check for event conflicts."""
+    service = EventService(db)
+    conflicts = await service.check_conflicts(
+        calendar_id, start_time, end_time, exclude_event_id
     )
-
     return {
-        "date": date_param.isoformat(),
-        "calendar_id": str(calendar_id),
-        "slots": [{"start_at": s.start_at.isoformat(), "end_at": s.end_at.isoformat()} for s in slots],
+        "has_conflicts": len(conflicts) > 0,
+        "conflicts": [
+            {"id": str(e.id), "title": e.title, "start": e.start_time, "end": e.end_time}
+            for e in conflicts
+        ],
     }

@@ -1,11 +1,25 @@
 "use client";
 
 import { useMemo, useRef, useState, useEffect } from "react";
-import { ChatSession } from "../../../types";
+import { ChatSession, Ev } from "../../../types";
 import { tokenize, uid } from "../../../utils";
-import { buildSessionId, playTTS, sendLLMMessage, initSpeechRecognition, startSpeechRecognition, stopSpeechRecognition, SpeechRecognitionState } from "./llmAgent";
+import { buildSessionId, playTTS, sendLLMMessage, initSpeechRecognition, startSpeechRecognition, stopSpeechRecognition, SpeechRecognitionState, LLMChatResponse } from "./llmAgent";
 
-export function useChatModal() {
+// Default calendar ID - in production, this should come from user context
+const DEFAULT_CALENDAR_ID = "00000000-0000-0000-0000-000000000001";
+
+export type ChatModalConfig = {
+  calendarId?: string;
+  userId?: string;
+  onEventCreated?: (event: Record<string, unknown>) => void;
+  onEventDeleted?: (eventId: string) => void;
+  onEventUpdated?: (event: Record<string, unknown>) => void;
+};
+
+export function useChatModal(config: ChatModalConfig = {}) {
+  const calendarId = config.calendarId || DEFAULT_CALENDAR_ID;
+  const userId = config.userId;
+
   const [chatOpen, setChatOpen] = useState(false);
   const [ttsEnabled, setTtsEnabled] = useState(false);
   const [sessionId] = useState(() => buildSessionId());
@@ -138,13 +152,33 @@ export function useChatModal() {
     setIsTyping(true);
 
     try {
-      const { reply, error } = await sendLLMMessage(trimmed, sessionId);
-      if (error) {
-        appendSessionMessage("agent", `⚠️ Error: ${error}`);
-      } else if (reply) {
-        appendSessionMessage("agent", reply);
+      const response: LLMChatResponse = await sendLLMMessage({
+        message: trimmed,
+        sessionId,
+        calendarId,
+        userId,
+        executeIntent: true,
+      });
+
+      if (response.error) {
+        appendSessionMessage("agent", `⚠️ Error: ${response.error}`);
+      } else if (response.reply) {
+        appendSessionMessage("agent", response.reply);
+
+        // Handle action results - trigger callbacks
+        if (response.action_result?.success) {
+          if (response.intent?.intent === "create_event" && response.action_result.event) {
+            config.onEventCreated?.(response.action_result.event);
+          } else if (response.intent?.intent === "delete_event") {
+            const eventId = response.intent.params?.event_id as string;
+            if (eventId) config.onEventDeleted?.(eventId);
+          } else if (response.intent?.intent === "move_event" && response.action_result.event) {
+            config.onEventUpdated?.(response.action_result.event);
+          }
+        }
+
         if (ttsEnabled) {
-          await playTTS(reply);
+          await playTTS(response.reply);
         }
       }
     } catch (err) {

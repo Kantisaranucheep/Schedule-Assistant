@@ -1,7 +1,6 @@
-# schedule-assistant/apps/backend/app/core/__init__.py
-"""Core module containing configuration and database setup."""
+"""Core module - config and database."""
 
-from app.core.config import Settings, get_settings
-from app.core.db import Base, get_db
+from .config import Settings, get_settings
+from .database import get_db, AsyncSessionLocal, engine
 
-__all__ = ["Settings", "get_settings", "Base", "get_db"]
+__all__ = ["Settings", "get_settings", "get_db", "AsyncSessionLocal", "engine"]

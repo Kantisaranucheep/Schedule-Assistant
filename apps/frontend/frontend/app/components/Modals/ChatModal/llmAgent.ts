@@ -1,7 +1,17 @@
 export type LLMChatResponse = {
     reply: string;
     error?: string;
-    intent_json?: Record<string, unknown>;
+    intent?: {
+        intent: string;
+        params: Record<string, unknown>;
+    };
+    action_result?: {
+        success: boolean;
+        message?: string;
+        error?: string;
+        event?: Record<string, unknown>;
+        events?: Array<Record<string, unknown>>;
+    };
 };
 
 export type SpeechRecognitionLike = {
@@ -33,26 +43,59 @@ export function buildSessionId(): string {
     return "session-" + Date.now() + "-" + Math.random().toString(16).slice(2);
 }
 
+export type SendMessageOptions = {
+    message: string;
+    sessionId: string;
+    calendarId?: string;
+    userId?: string;
+    executeIntent?: boolean;
+    url?: string;
+};
+
 export async function sendLLMMessage(
-    message: string,
-    sessionId: string,
+    messageOrOptions: string | SendMessageOptions,
+    sessionId?: string,
     url = "http://localhost:8000/agent/chat",
 ): Promise<LLMChatResponse> {
-    const cleanMessage = message.trim();
+    // Support both old and new API
+    let options: SendMessageOptions;
+    if (typeof messageOrOptions === "string") {
+        options = {
+            message: messageOrOptions,
+            sessionId: sessionId || "default",
+            url,
+        };
+    } else {
+        options = messageOrOptions;
+    }
+
+    const cleanMessage = options.message.trim();
     if (!cleanMessage) {
         return { reply: "", error: "Empty message" };
     }
 
-    const response = await fetch(url, {
+    const requestBody: Record<string, unknown> = {
+        message: cleanMessage,
+        session_id: options.sessionId,
+        execute_intent: options.executeIntent ?? true,
+    };
+
+    // Add calendar_id if provided (required for executing intents)
+    if (options.calendarId) {
+        requestBody.calendar_id = options.calendarId;
+    }
+
+    // Add user_id if provided
+    if (options.userId) {
+        requestBody.user_id = options.userId;
+    }
+
+    const response = await fetch(options.url || url, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-            message: cleanMessage,
-            session_id: sessionId,
-            current_datetime: new Date().toISOString().slice(0, 16).replace("T", " "),
-        }),
+        body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
@@ -73,28 +116,21 @@ export async function sendLLMMessage(
 }
 
 export async function playTTS(text: string, url = "http://localhost:8000/agent/tts"): Promise<void> {
+    // TTS endpoint removed from backend - this is a no-op fallback
+    // You can integrate a client-side TTS library like Web Speech API instead
     if (!text.trim()) {
         return;
     }
 
-    try {
-        const response = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text }),
-        });
-        if (!response.ok) {
-            console.warn("TTS request failed", response.status);
-            return;
-        }
-        const blob = await response.blob();
-        const audioUrl = URL.createObjectURL(blob);
-        const audio = new Audio(audioUrl);
-        await audio.play();
-        URL.revokeObjectURL(audioUrl);
-    } catch (error) {
-        console.error("TTS playback error:", error);
+    // Try using browser's built-in speech synthesis
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = "en-US";
+        window.speechSynthesis.speak(utterance);
+        return;
     }
+
+    console.warn("TTS not available - no speech synthesis support");
 }
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;

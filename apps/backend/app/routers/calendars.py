@@ -1,53 +1,72 @@
-# schedule-assistant/apps/backend/app/routers/calendars.py
-"""Calendar endpoints."""
+"""Calendar CRUD endpoints."""
 
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db import get_db
-from app.models.calendar import Calendar
-from app.models.user import User
-from app.schemas.calendar import CalendarCreate, CalendarRead
+from app.core.database import get_db
+from app.schemas import CalendarCreate, CalendarUpdate, CalendarResponse
+from app.services import CalendarService
 
 router = APIRouter(prefix="/calendars", tags=["calendars"])
 
 
-@router.get("", response_model=List[CalendarRead])
+@router.get("", response_model=List[CalendarResponse])
 async def list_calendars(
     user_id: UUID,
     db: AsyncSession = Depends(get_db),
-) -> List[Calendar]:
-    """List all calendars for a user."""
-    result = await db.execute(
-        select(Calendar).where(Calendar.user_id == user_id).order_by(Calendar.created_at)
-    )
-    return list(result.scalars().all())
+):
+    """Get all calendars for a user."""
+    service = CalendarService(db)
+    return await service.get_by_user(user_id)
 
 
-@router.post("", response_model=CalendarRead, status_code=status.HTTP_201_CREATED)
+@router.get("/{calendar_id}", response_model=CalendarResponse)
+async def get_calendar(
+    calendar_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a specific calendar."""
+    service = CalendarService(db)
+    calendar = await service.get(calendar_id)
+    if not calendar:
+        raise HTTPException(status_code=404, detail="Calendar not found")
+    return calendar
+
+
+@router.post("", response_model=CalendarResponse, status_code=201)
 async def create_calendar(
     data: CalendarCreate,
     db: AsyncSession = Depends(get_db),
-) -> Calendar:
+):
     """Create a new calendar."""
-    # Verify user exists
-    user = await db.get(User, data.user_id)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User {data.user_id} not found",
-        )
+    service = CalendarService(db)
+    return await service.create(data)
 
-    calendar = Calendar(
-        user_id=data.user_id,
-        name=data.name,
-        timezone=data.timezone,
-    )
-    db.add(calendar)
-    await db.flush()
-    await db.refresh(calendar)
+
+@router.patch("/{calendar_id}", response_model=CalendarResponse)
+async def update_calendar(
+    calendar_id: UUID,
+    data: CalendarUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a calendar."""
+    service = CalendarService(db)
+    calendar = await service.update(calendar_id, data)
+    if not calendar:
+        raise HTTPException(status_code=404, detail="Calendar not found")
     return calendar
+
+
+@router.delete("/{calendar_id}", status_code=204)
+async def delete_calendar(
+    calendar_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a calendar."""
+    service = CalendarService(db)
+    deleted = await service.delete(calendar_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Calendar not found")

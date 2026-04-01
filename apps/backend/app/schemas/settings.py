@@ -1,36 +1,40 @@
-# schedule-assistant/apps/backend/app/schemas/settings.py
-"""User settings Pydantic schemas."""
+"""User settings schemas."""
 
 from datetime import datetime
-from typing import Any, Dict
+from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, Field
 
 
-class SettingsBase(BaseModel):
-    """Base schema for user settings data."""
+class UserSettingsBase(BaseModel):
+    """Base settings fields."""
 
-    timezone: str = "Asia/Bangkok"
-    default_duration_min: int = 60
-    buffer_min: int = 10
-    preferences: Dict[str, Any] = {}
-
-
-class SettingsUpdate(BaseModel):
-    """Schema for updating user settings."""
-
-    timezone: str | None = None
-    default_duration_min: int | None = None
-    buffer_min: int | None = None
-    preferences: Dict[str, Any] | None = None
+    working_hours_start: str = Field(default="09:00", pattern=r"^\d{2}:\d{2}$")
+    working_hours_end: str = Field(default="18:00", pattern=r"^\d{2}:\d{2}$")
+    buffer_minutes: int = Field(default=10, ge=0, le=120)
 
 
-class SettingsRead(SettingsBase):
-    """Schema for reading user settings data."""
+class UserSettingsCreate(UserSettingsBase):
+    """Create settings request."""
 
-    model_config = ConfigDict(from_attributes=True)
+    user_id: UUID
 
+
+class UserSettingsUpdate(BaseModel):
+    """Update settings request."""
+
+    working_hours_start: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")
+    working_hours_end: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")
+    buffer_minutes: Optional[int] = Field(default=None, ge=0, le=120)
+
+
+class UserSettingsResponse(UserSettingsBase):
+    """Settings response."""
+
+    id: UUID
     user_id: UUID
     created_at: datetime
     updated_at: datetime
+
+    model_config = {"from_attributes": True}

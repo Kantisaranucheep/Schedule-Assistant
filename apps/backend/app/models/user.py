@@ -1,52 +1,51 @@
-# schedule-assistant/apps/backend/app/models/user.py
-"""User model."""
+"""User and UserSettings models."""
 
 import uuid
-from datetime import datetime
-from typing import TYPE_CHECKING, List
+from typing import Optional, List, TYPE_CHECKING
 
-from sqlalchemy import Text, text
-from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
+from sqlalchemy import String, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.db import Base
+from .base import BaseModel
 
 if TYPE_CHECKING:
-    from app.models.calendar import Calendar
-    from app.models.event_type import EventType
-    from app.models.user_settings import UserSettings
-    from app.models.chat_session import ChatSession
+    from .calendar import Calendar
+    from .chat import ChatSession
 
 
-class User(Base):
-    """User model representing application users."""
+class User(BaseModel):
+    """User account."""
 
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-        server_default=text("gen_random_uuid()"),
-    )
-    name: Mapped[str | None] = mapped_column(Text, nullable=True)
-    email: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        server_default=text("now()"),
-    )
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    timezone: Mapped[str] = mapped_column(String(50), default="Asia/Bangkok")
 
     # Relationships
     calendars: Mapped[List["Calendar"]] = relationship(
         "Calendar", back_populates="user", cascade="all, delete-orphan"
     )
-    event_types: Mapped[List["EventType"]] = relationship(
-        "EventType", back_populates="user", cascade="all, delete-orphan"
-    )
-    settings: Mapped["UserSettings"] = relationship(
-        "UserSettings", back_populates="user", cascade="all, delete-orphan", uselist=False
+    settings: Mapped[Optional["UserSettings"]] = relationship(
+        "UserSettings", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
     chat_sessions: Mapped[List["ChatSession"]] = relationship(
         "ChatSession", back_populates="user", cascade="all, delete-orphan"
     )
+
+
+class UserSettings(BaseModel):
+    """User preferences."""
+
+    __tablename__ = "user_settings"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True
+    )
+    working_hours_start: Mapped[str] = mapped_column(String(5), default="09:00")
+    working_hours_end: Mapped[str] = mapped_column(String(5), default="18:00")
+    buffer_minutes: Mapped[int] = mapped_column(default=10)
+
+    # Relationships
+    user: Mapped["User"] = relationship("User", back_populates="settings")

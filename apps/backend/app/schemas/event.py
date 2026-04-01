@@ -1,59 +1,50 @@
-# schedule-assistant/apps/backend/app/schemas/event.py
-"""Event Pydantic schemas."""
+"""Event schemas."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, Field
 
 
 class EventBase(BaseModel):
-    """Base schema for event data."""
+    """Base event fields."""
 
-    title: str
-    description: str | None = None
-    location: str | None = None
-    start_at: datetime
-    end_at: datetime
-    status: Literal["confirmed", "tentative", "cancelled"] = "confirmed"
-    created_by: Literal["user", "agent"] = "user"
-
-    @field_validator("end_at")
-    @classmethod
-    def validate_end_after_start(cls, v: datetime, info) -> datetime:
-        """Ensure end_at is after start_at."""
-        if "start_at" in info.data and v <= info.data["start_at"]:
-            raise ValueError("end_at must be after start_at")
-        return v
+    title: str = Field(..., max_length=255)
+    start_time: datetime
+    end_time: datetime
+    all_day: bool = False
+    location: Optional[str] = Field(default=None, max_length=500)
+    notes: Optional[str] = None
+    color: str = Field(default="#3B82F6", pattern=r"^#[0-9A-Fa-f]{6}$")
 
 
 class EventCreate(EventBase):
-    """Schema for creating an event."""
+    """Create event request."""
 
     calendar_id: UUID
-    type_id: UUID | None = None
 
 
 class EventUpdate(BaseModel):
-    """Schema for updating an event."""
+    """Update event request."""
 
-    title: str | None = None
-    description: str | None = None
-    location: str | None = None
-    start_at: datetime | None = None
-    end_at: datetime | None = None
-    status: Literal["confirmed", "tentative", "cancelled"] | None = None
-    type_id: UUID | None = None
+    title: Optional[str] = Field(default=None, max_length=255)
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    all_day: Optional[bool] = None
+    location: Optional[str] = Field(default=None, max_length=500)
+    notes: Optional[str] = None
+    color: Optional[str] = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    status: Optional[str] = Field(default=None, pattern=r"^(confirmed|cancelled|tentative)$")
 
 
-class EventRead(EventBase):
-    """Schema for reading event data."""
-
-    model_config = ConfigDict(from_attributes=True)
+class EventResponse(EventBase):
+    """Event response."""
 
     id: UUID
     calendar_id: UUID
-    type_id: UUID | None = None
+    status: str
     created_at: datetime
     updated_at: datetime
+
+    model_config = {"from_attributes": True}

@@ -1,57 +1,65 @@
-# schedule-assistant/apps/backend/app/schemas/chat.py
-"""Chat Pydantic schemas."""
+"""Chat schemas - matches frontend LLMChatResponse interface."""
 
 from datetime import datetime
-from decimal import Decimal
-from typing import Any, Dict, Literal
+from typing import Optional, Dict, Any, List
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
-class ChatSessionBase(BaseModel):
-    """Base schema for chat session data."""
+class ChatRequest(BaseModel):
+    """Chat request from frontend."""
 
-    title: str | None = None
-
-
-class ChatSessionCreate(ChatSessionBase):
-    """Schema for creating a chat session."""
-
-    user_id: UUID
+    message: str = Field(..., min_length=1)
+    session_id: str  # Frontend uses string UUIDs
+    execute_intent: bool = True
+    calendar_id: Optional[str] = None
+    user_id: Optional[str] = None
 
 
-class ChatSessionRead(ChatSessionBase):
-    """Schema for reading chat session data."""
+class IntentData(BaseModel):
+    """Intent extracted by agent."""
 
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    user_id: UUID
-    created_at: datetime
+    intent: str
+    params: Dict[str, Any] = Field(default_factory=dict)
 
 
-class ChatMessageBase(BaseModel):
-    """Base schema for chat message data."""
+class ActionResult(BaseModel):
+    """Result of executing an intent."""
 
-    role: Literal["user", "assistant", "system", "tool"]
-    content: str
-    extracted_json: Dict[str, Any] | None = None
-    action_json: Dict[str, Any] | None = None
-    confidence: Decimal | None = Field(None, ge=0, le=1, decimal_places=3)
-
-
-class ChatMessageCreate(ChatMessageBase):
-    """Schema for creating a chat message."""
-
-    pass
+    success: bool
+    message: Optional[str] = None
+    error: Optional[str] = None
+    event: Optional[Dict[str, Any]] = None
+    events: Optional[List[Dict[str, Any]]] = None
 
 
-class ChatMessageRead(ChatMessageBase):
-    """Schema for reading chat message data."""
+class ChatResponse(BaseModel):
+    """Chat response - matches frontend LLMChatResponse."""
 
-    model_config = ConfigDict(from_attributes=True)
+    reply: str
+    error: Optional[str] = None
+    intent: Optional[IntentData] = None
+    action_result: Optional[ActionResult] = None
+
+
+class ChatMessageResponse(BaseModel):
+    """Chat message response."""
 
     id: UUID
-    session_id: UUID
+    role: str
+    text: str
     created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ChatSessionResponse(BaseModel):
+    """Chat session response."""
+
+    id: UUID
+    title: str
+    created_at: datetime
+    messages: List[ChatMessageResponse] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}

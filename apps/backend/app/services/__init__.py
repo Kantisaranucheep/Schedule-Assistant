@@ -1,11 +1,13 @@
-# schedule-assistant/apps/backend/app/services/__init__.py
 """Business logic services."""
 
-from app.services.availability import get_available_slots, TimeSlot
-from app.services.conflicts import check_event_conflicts
+from .calendar_service import CalendarService
+from .event_service import EventService
+from .chat_service import ChatService
+from .availability_service import AvailabilityService
 
 __all__ = [
-    "get_available_slots",
-    "TimeSlot",
-    "check_event_conflicts",
+    "CalendarService",
+    "EventService",
+    "ChatService",
+    "AvailabilityService",
 ]
