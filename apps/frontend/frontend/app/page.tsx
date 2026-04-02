@@ -2,7 +2,7 @@
 
 import React, { useEffect } from "react";
 import "./SmartScheduler.css";
-import { RAINBOW, addDaysISO, dayHeaderLabel } from "./utils";
+import { addDaysISO, dayHeaderLabel } from "./utils";
 
 import Sidebar from "./components/Sidebar";
 import MonthNavigation from "./components/MonthNavigation";
@@ -21,7 +21,7 @@ import { useEventModal } from "./hooks/useEventModal";
 import { useHotkeys } from "./hooks/useHotkeys";
 
 export default function Home() {
-  const { events, addEvent } = useEvents();
+  const { events, addEvent, loading, error, refetch } = useEvents();
   const filters = useFilters(events);
   const calendarView = useCalendarView(filters.filteredEvents);
   const eventModal = useEventModal();
@@ -30,6 +30,17 @@ export default function Home() {
 
   const { chatOpen, activeSession, isTyping, chatEndRef, isRecording, toggleRecording } = chat;
 
+  // Refetch events when month changes
+  useEffect(() => {
+    const firstOfMonth = new Date(calendarView.viewYear, calendarView.viewMonth, 1);
+    // Get last day of month + buffer for adjacent days shown in calendar
+    const lastOfMonth = new Date(calendarView.viewYear, calendarView.viewMonth + 1, 7);
+    // Also get buffer for previous month days shown
+    firstOfMonth.setDate(firstOfMonth.getDate() - 7);
+    
+    refetch(firstOfMonth, lastOfMonth);
+  }, [calendarView.viewYear, calendarView.viewMonth, refetch]);
+
   // Auto-scroll chat to bottom
   useEffect(() => {
     if (chatOpen) {
@@ -37,20 +48,10 @@ export default function Home() {
     }
   }, [activeSession?.messages, isTyping, chatOpen, chatEndRef]);
 
-
-
-
-
-
-
-
-
-
-
-  function saveEvent(e: React.FormEvent) {
+  async function saveEvent(e: React.FormEvent) {
     e.preventDefault();
 
-    const result = addEvent(
+    const result = await addEvent(
       eventModal.modalKind,
       eventModal.mTitle,
       eventModal.mDate,
@@ -72,7 +73,40 @@ export default function Home() {
     eventModal.setOpen(false);
   }
 
+  // Loading state
+  if (loading && Object.keys(events).length === 0) {
+    return (
+      <div className="container-fluid vh-100 d-flex align-items-center justify-content-center bg-dark">
+        <div className="text-center text-white">
+          <div className="spinner-border text-primary mb-3" role="status">
+            <span className="visually-hidden">Loading...</span>
+          </div>
+          <p className="mb-0">Loading calendar...</p>
+        </div>
+      </div>
+    );
+  }
 
+  // Error state
+  if (error && Object.keys(events).length === 0) {
+    return (
+      <div className="container-fluid vh-100 d-flex align-items-center justify-content-center bg-dark">
+        <div className="text-center text-white">
+          <div className="alert alert-danger" role="alert">
+            <h5 className="alert-heading">Failed to load calendar</h5>
+            <p className="mb-0">{error}</p>
+            <hr />
+            <button 
+              className="btn btn-outline-danger"
+              onClick={() => refetch()}
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container-fluid vh-100 p-0 d-flex flex-column overflow-hidden bg-dark">
@@ -130,6 +164,12 @@ export default function Home() {
 
             {/* Right: Search, Filter, Add & View Toggle */}
             <div className="d-flex align-items-center gap-2">
+              {/* Loading indicator for background fetches */}
+              {loading && (
+                <div className="spinner-border spinner-border-sm text-secondary me-2" role="status">
+                  <span className="visually-hidden">Loading...</span>
+                </div>
+              )}
               <FilterBar
                 searchText={filters.searchText}
                 setSearchText={filters.setSearchText}
@@ -194,8 +234,10 @@ export default function Home() {
             isTyping={chat.isTyping}
             ttsEnabled={chat.ttsEnabled}
             toggleTts={chat.toggleTts}
-            chatEndRef={chat.chatEndRef}            isRecording={isRecording}
-            toggleRecording={toggleRecording}          />
+            chatEndRef={chat.chatEndRef}
+            isRecording={isRecording}
+            toggleRecording={toggleRecording}
+          />
 
           {/* ===== EVENT MODAL ===== */}
           <EventModal
