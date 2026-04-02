@@ -1,7 +1,7 @@
 export type Kind = "event" | "task";
 
 export type Ev = {
-    id: number;
+    id: string | number; // string for API events (UUID), number for local
     kind: Kind;
     allDay: boolean;
     startMin: number;
