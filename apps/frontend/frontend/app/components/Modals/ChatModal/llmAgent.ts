@@ -50,6 +50,7 @@ export type SendMessageOptions = {
     userId?: string;
     executeIntent?: boolean;
     url?: string;
+    timezone?: string;
 };
 
 export async function sendLLMMessage(
@@ -89,6 +90,9 @@ export async function sendLLMMessage(
     if (options.userId) {
         requestBody.user_id = options.userId;
     }
+
+    // Add timezone for proper datetime handling
+    requestBody.timezone = options.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     const response = await fetch(options.url || url, {
         method: "POST",

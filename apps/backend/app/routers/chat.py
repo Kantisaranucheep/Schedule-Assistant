@@ -84,12 +84,21 @@ async def chat(
         # Handle different intent types with actual DB operations
         intent_type = IntentType(intent.intent_type) if isinstance(intent.intent_type, str) else intent.intent_type
         
+        # Get timezone from request
+        user_timezone = request.timezone or "Asia/Bangkok"
+        
         if intent_type == IntentType.CREATE_EVENT:
-            result = await _handle_create_event(db, calendar_uuid, intent.data or {})
+            # Add timezone to intent data for proper handling
+            intent_data = intent.data or {}
+            intent_data["timezone"] = user_timezone
+            result = await _handle_create_event(db, calendar_uuid, intent_data)
         elif intent_type == IntentType.DELETE_EVENT:
             result = await _handle_delete_event(db, calendar_uuid, intent.data or {})
         elif intent_type == IntentType.MOVE_EVENT:
-            result = await _handle_move_event(db, calendar_uuid, intent.data or {})
+            # Add timezone to intent data for proper handling
+            intent_data = intent.data or {}
+            intent_data["timezone"] = user_timezone
+            result = await _handle_move_event(db, calendar_uuid, intent_data)
         elif intent_type == IntentType.FIND_FREE_SLOTS:
             result = await _handle_find_free_slots(db, calendar_uuid, user_uuid, intent.data or {})
         else:
@@ -129,7 +138,8 @@ async def _handle_create_event(
     data: dict,
 ) -> ActionResult:
     """Handle create_event intent."""
-    from datetime import datetime
+    from datetime import datetime, timezone as dt_timezone
+    from zoneinfo import ZoneInfo
     from app.schemas import EventCreate
     
     try:
@@ -138,8 +148,20 @@ async def _handle_create_event(
         start_time = data.get("start_time", "09:00")
         end_time = data.get("end_time", "10:00")
         
-        start_dt = datetime.strptime(f"{date} {start_time}", "%Y-%m-%d %H:%M")
-        end_dt = datetime.strptime(f"{date} {end_time}", "%Y-%m-%d %H:%M")
+        # Get user's timezone - default to Asia/Bangkok if not provided
+        user_timezone = data.get("timezone", "Asia/Bangkok")
+        try:
+            tz = ZoneInfo(user_timezone)
+        except Exception:
+            tz = ZoneInfo("Asia/Bangkok")
+        
+        # Parse as naive datetime first, then localize to user's timezone
+        naive_start = datetime.strptime(f"{date} {start_time}", "%Y-%m-%d %H:%M")
+        naive_end = datetime.strptime(f"{date} {end_time}", "%Y-%m-%d %H:%M")
+        
+        # Make timezone-aware in user's local timezone
+        start_dt = naive_start.replace(tzinfo=tz)
+        end_dt = naive_end.replace(tzinfo=tz)
         
         event_service = EventService(db)
         
@@ -231,6 +253,7 @@ async def _handle_move_event(
 ) -> ActionResult:
     """Handle move_event intent."""
     from datetime import datetime
+    from zoneinfo import ZoneInfo
     from app.schemas import EventUpdate
     
     try:
@@ -258,13 +281,25 @@ async def _handle_move_event(
         if not event:
             return ActionResult(success=False, message="Could not find the event to move", error="not_found")
         
+        # Get user's timezone - default to Asia/Bangkok if not provided
+        user_timezone = data.get("timezone", "Asia/Bangkok")
+        try:
+            tz = ZoneInfo(user_timezone)
+        except Exception:
+            tz = ZoneInfo("Asia/Bangkok")
+        
         # Parse new timing
         new_date = data.get("new_date", datetime.now().strftime("%Y-%m-%d"))
         new_start = data.get("new_start_time", "09:00")
         new_end = data.get("new_end_time", "10:00")
         
-        new_start_dt = datetime.strptime(f"{new_date} {new_start}", "%Y-%m-%d %H:%M")
-        new_end_dt = datetime.strptime(f"{new_date} {new_end}", "%Y-%m-%d %H:%M")
+        # Parse as naive datetime first, then localize to user's timezone
+        naive_start = datetime.strptime(f"{new_date} {new_start}", "%Y-%m-%d %H:%M")
+        naive_end = datetime.strptime(f"{new_date} {new_end}", "%Y-%m-%d %H:%M")
+        
+        # Make timezone-aware in user's local timezone
+        new_start_dt = naive_start.replace(tzinfo=tz)
+        new_end_dt = naive_end.replace(tzinfo=tz)
         
         # Check for conflicts
         conflicts = await event_service.check_conflicts(

@@ -6,18 +6,20 @@ import { Ev, EventMap, Kind } from "../types";
 import { EventResponse } from "../services/events.api";
 
 /**
- * Convert ISO datetime to minutes from midnight
+ * Convert ISO datetime to minutes from midnight in LOCAL timezone
  */
 function dateToMinutes(dateStr: string): number {
   const date = new Date(dateStr);
+  // getHours/getMinutes already return local time
   return date.getHours() * 60 + date.getMinutes();
 }
 
 /**
- * Get date key (YYYY-MM-DD) from ISO datetime
+ * Get date key (YYYY-MM-DD) from ISO datetime in LOCAL timezone
  */
 function getDateKey(dateStr: string): string {
   const date = new Date(dateStr);
+  // Use local date components, not UTC
   return [
     date.getFullYear(),
     String(date.getMonth() + 1).padStart(2, "0"),

@@ -15,6 +15,7 @@ class ChatRequest(BaseModel):
     execute_intent: bool = True
     calendar_id: Optional[str] = None
     user_id: Optional[str] = None
+    timezone: Optional[str] = Field(default="Asia/Bangkok", description="User's IANA timezone")
 
 
 class IntentData(BaseModel):
