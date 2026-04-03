@@ -133,7 +133,6 @@ export default function Home() {
 
       const filteredArr = arr.filter((ev) => {
         if (filters.kindFilter !== "all" && ev.kind !== filters.kindFilter) return false;
-
         if (filters.selectedCategories.length > 0) {
           // check if event's categoryId or color matches selected categories
           const catMatch = filters.selectedCategories.some(catId => {
