@@ -4,6 +4,8 @@ import { addDaysISO, minutesToLabel } from "../utils";
 
 interface DayViewProps {
     dayEvents: Ev[];
+    selectedDay: string;
+    onViewEvent: (dateKey: string, ev: Ev) => void;
 }
 
 interface EventPortion {
@@ -45,6 +47,8 @@ function splitEventByHours(ev: Ev): EventPortion[] {
 
 export default function DayView({
     dayEvents,
+    selectedDay,
+    onViewEvent,
 }: DayViewProps) {
     return (
         <section className="flex-grow-1 d-flex flex-column overflow-hidden bg-white shadow-sm">
@@ -179,6 +183,12 @@ export default function DayView({
                                             title={`${p.event.title} • ${minutesToLabel(
                                                 p.event.startMin
                                             )} - ${minutesToLabel(p.event.endMin)}`}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onViewEvent(selectedDay, p.event);
+                                            }}
+                                            role="button"
+                                            tabIndex={0}
                                         >
                                             <div
                                                 className="text-truncate fw-bold text-dark"

@@ -14,9 +14,10 @@ interface MonthGridProps {
     cells: Cell[];
     onSelectDay: (key: string) => void;
     setViewMode: (mode: "month" | "day") => void;
+    onViewEvent: (dateKey: string, ev: Ev) => void;
 }
 
-export default function MonthGrid({ cells, onSelectDay, setViewMode }: MonthGridProps) {
+export default function MonthGrid({ cells, onSelectDay, setViewMode, onViewEvent }: MonthGridProps) {
     return (
         <section className="flex-grow-1 d-flex flex-column overflow-hidden bg-white">
             <div
@@ -115,11 +116,16 @@ export default function MonthGrid({ cells, onSelectDay, setViewMode }: MonthGrid
                                 {shown.map((ev) => (
                                     <div
                                         key={ev.id}
-                                        className="d-flex align-items-center gap-1 px-2 py-1 rounded-3 border overflow-hidden shadow-sm"
+                                        className="d-flex align-items-center gap-1 px-2 py-1 rounded-3 border overflow-hidden shadow-sm hover-overlay"
                                         style={{
                                             borderLeft: `3px solid ${ev.color}`,
                                             backgroundColor: `color-mix(in srgb, ${ev.color} 15%, #ffffff)`,
                                             borderColor: `color-mix(in srgb, ${ev.color} 30%, #dee2e6)`,
+                                            cursor: "pointer",
+                                        }}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onViewEvent(c.key, ev);
                                         }}
                                     >
                                         <div

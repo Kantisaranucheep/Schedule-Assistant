@@ -1,15 +1,16 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { RAINBOW, uniq } from "../utils";
-import { EventMap, FilterCriteria } from "../types";
+import { EventMap, FilterCriteria, EventCategory } from "../types";
 
 interface FilterBarProps {
     events: EventMap;
+    categories: EventCategory[];
     onFilterChange: (filters: FilterCriteria) => void;
     onAddEvent: () => void;
 }
 
 export default function FilterBar({
     events,
+    categories,
     onFilterChange,
     onAddEvent,
 }: FilterBarProps) {
@@ -19,15 +20,7 @@ export default function FilterBar({
     const [locationFilter, setLocationFilter] = useState("");
     const [fromDate, setFromDate] = useState<string>("");
     const [toDate, setToDate] = useState<string>("");
-    const [selectedColors, setSelectedColors] = useState<string[]>([]);
-
-    const allColors = useMemo(() => {
-        const colors: string[] = [];
-        Object.values(events).forEach((arr) =>
-            arr.forEach((ev) => colors.push(ev.color))
-        );
-        return uniq(colors.length ? colors : RAINBOW);
-    }, [events]);
+    const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
     const activeFilterCount = useMemo(() => {
         let n = 0;
@@ -36,19 +29,19 @@ export default function FilterBar({
         if (fromDate) n++;
         if (toDate) n++;
         if (locationFilter.trim()) n++;
-        if (selectedColors.length > 0) n++;
+        if (selectedCategories.length > 0) n++;
         return n;
-    }, [searchText, kindFilter, fromDate, toDate, locationFilter, selectedColors]);
+    }, [searchText, kindFilter, fromDate, toDate, locationFilter, selectedCategories]);
 
-    function toggleColor(c: string) {
-        setSelectedColors((prev) =>
-            prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]
+    function toggleCategory(catId: string) {
+        setSelectedCategories((prev) =>
+            prev.includes(catId) ? prev.filter((x) => x !== catId) : [...prev, catId]
         );
     }
 
     function clearAllFilters() {
         setKindFilter("all");
-        setSelectedColors([]);
+        setSelectedCategories([]);
         setFromDate("");
         setToDate("");
         setLocationFilter("");
@@ -63,9 +56,9 @@ export default function FilterBar({
             locationFilter,
             fromDate,
             toDate,
-            selectedColors,
+            selectedCategories,
         });
-    }, [searchText, kindFilter, locationFilter, fromDate, toDate, selectedColors, onFilterChange]);
+    }, [searchText, kindFilter, locationFilter, fromDate, toDate, selectedCategories, onFilterChange]);
 
     return (
         <div
@@ -211,49 +204,36 @@ export default function FilterBar({
 
                         <div className="mb-4">
                             <label className="small fw-bold text-dark mb-2 d-block">
-                                Color Tag
+                                Categories
                             </label>
                             <div className="d-flex gap-2 flex-wrap">
-                                {allColors.map((c) => (
+                                {categories.map((cat) => (
                                     <button
-                                        key={c}
+                                        key={cat.id}
                                         type="button"
-                                        className={`rounded-circle d-flex align-items-center justify-content-center transition-all ${selectedColors.includes(c)
-                                            ? "ring-2 ring-offset-1"
-                                            : "opacity-75 hover-opacity-100"
+                                        className={`btn btn-sm rounded-pill d-flex align-items-center gap-2 transition-all ${selectedCategories.includes(cat.id)
+                                            ? "shadow-sm border-0"
+                                            : "opacity-75 hover-opacity-100 border bg-light text-secondary"
                                             }`}
                                         style={{
-                                            width: 28,
-                                            height: 28,
-                                            background: c,
-                                            cursor: "pointer",
-                                            border: selectedColors.includes(c)
-                                                ? `2px solid ${c}`
-                                                : "2px solid transparent", // Fallback
-                                            boxShadow: selectedColors.includes(c)
-                                                ? "0 0 0 2px white, 0 0 0 4px #e5e7eb"
-                                                : "none",
-                                            transform: selectedColors.includes(c)
-                                                ? "scale(1.1)"
-                                                : "scale(1)",
+                                            fontSize: 11,
+                                            fontWeight: 600,
+                                            backgroundColor: selectedCategories.includes(cat.id) ? `${cat.color}20` : undefined,
+                                            color: selectedCategories.includes(cat.id) ? cat.color : undefined,
+                                            borderColor: selectedCategories.includes(cat.id) ? cat.color : undefined
                                         }}
-                                        onClick={() => toggleColor(c)}
-                                        title={c}
+                                        onClick={() => toggleCategory(cat.id)}
+                                        title={cat.name}
                                     >
-                                        {selectedColors.includes(c) && (
-                                            <svg
-                                                width="14"
-                                                height="14"
-                                                viewBox="0 0 24 24"
-                                                fill="none"
-                                                stroke="white"
-                                                strokeWidth="3"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                            >
-                                                <polyline points="20 6 9 17 4 12"></polyline>
-                                            </svg>
-                                        )}
+                                        <div
+                                            className="rounded-circle"
+                                            style={{
+                                                width: 10,
+                                                height: 10,
+                                                backgroundColor: cat.color,
+                                            }}
+                                        />
+                                        {cat.name}
                                     </button>
                                 ))}
                             </div>
