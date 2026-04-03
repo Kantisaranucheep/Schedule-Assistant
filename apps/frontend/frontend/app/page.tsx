@@ -23,7 +23,8 @@ import FilterBar from "./components/FilterBar";
 import MonthGrid from "./components/MonthGrid";
 import DayView from "./components/DayView";
 import HotkeysModal from "./components/Modals/HotkeysModal";
-import ChatModal from "./components/Modals/ChatModal";
+import ChatModal from "./components/Modals/ChatModal/ChatModal";
+import { useChatModal } from "./components/Modals/ChatModal/useChatModal";
 import EventModal from "./components/Modals/EventModal";
 import ViewEventModal from "./components/Modals/ViewEventModal";
 
@@ -58,7 +59,7 @@ export default function Home() {
 
   // ===== Modals visibility =====
   const [hotkeysOpen, setHotkeysOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
+  const { chatOpen, setChatOpen, ...chatProps } = useChatModal();
   const [eventModalOpen, setEventModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<{ event: Ev; dateKey: string } | null>(null);
   const [viewingEvent, setViewingEvent] = useState<{ event: Ev; dateKey: string } | null>(null);
@@ -132,7 +133,7 @@ export default function Home() {
 
       const filteredArr = arr.filter((ev) => {
         if (filters.kindFilter !== "all" && ev.kind !== filters.kindFilter) return false;
-        
+
         if (filters.selectedCategories.length > 0) {
           // check if event's categoryId or color matches selected categories
           const catMatch = filters.selectedCategories.some(catId => {
@@ -443,6 +444,24 @@ export default function Home() {
           <ChatModal
             isOpen={chatOpen}
             onClose={() => setChatOpen(false)}
+            sessions={chatProps.sessions}
+            activeSessionId={chatProps.activeSessionId}
+            setActiveSessionId={chatProps.setActiveSessionId}
+            activeSession={chatProps.activeSession}
+            chatInput={chatProps.chatInput}
+            setChatInput={chatProps.setChatInput}
+            pushUserMessage={chatProps.pushUserMessage}
+            newSession={chatProps.newSession}
+            renameSession={chatProps.renameSession}
+            deleteSession={chatProps.deleteSession}
+            togglePinSession={chatProps.togglePinSession}
+            isTyping={chatProps.isTyping}
+            ttsEnabled={chatProps.ttsEnabled}
+            toggleTts={chatProps.toggleTts}
+            chatEndRef={chatProps.chatEndRef}
+            isRecording={chatProps.isRecording}
+            toggleRecording={chatProps.toggleRecording}
+            loading={chatProps.loading}
           />
 
           {/* ===== EVENT MODAL ===== */}

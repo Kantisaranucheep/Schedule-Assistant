@@ -38,6 +38,7 @@ export type ChatSession = {
     id: string;
     title: string;
     messages: ChatMsg[];
+    isPinned?: boolean;
 };
 export type FilterCriteria = {
     searchText: string;
