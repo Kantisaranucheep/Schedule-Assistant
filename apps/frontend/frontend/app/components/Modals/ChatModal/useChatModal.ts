@@ -1,12 +1,19 @@
 "use client";
 
-import { useMemo, useRef, useState, useEffect } from "react";
-import { ChatSession, Ev } from "../../../types";
+import { useMemo, useRef, useState, useEffect, useCallback } from "react";
+import { ChatSession, ChatMsg } from "../../../types";
 import { tokenize, uid } from "../../../utils";
 import { buildSessionId, playTTS, sendLLMMessage, initSpeechRecognition, startSpeechRecognition, stopSpeechRecognition, SpeechRecognitionState, LLMChatResponse } from "./llmAgent";
+import { 
+  fetchChatSessions, 
+  createChatSession, 
+  ChatSessionResponse, 
+  ChatMessageResponse 
+} from "../../../services/chat.api";
 
-// Default calendar ID - in production, this should come from user context
+// Default IDs - in production, these should come from user context
 const DEFAULT_CALENDAR_ID = "00000000-0000-0000-0000-000000000001";
+const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 export type ChatModalConfig = {
   calendarId?: string;
@@ -16,67 +23,91 @@ export type ChatModalConfig = {
   onEventUpdated?: (event: Record<string, unknown>) => void;
 };
 
+/**
+ * Transform API chat session to frontend format
+ */
+function transformApiSession(apiSession: ChatSessionResponse): ChatSession {
+  return {
+    id: apiSession.id,
+    title: apiSession.title,
+    messages: apiSession.messages.map((msg: ChatMessageResponse): ChatMsg => ({
+      id: msg.id,
+      role: msg.role as "user" | "agent",
+      text: msg.text,
+      tokens: msg.role === "user" ? tokenize(msg.text) : undefined,
+      createdAt: new Date(msg.created_at).getTime(),
+    })),
+  };
+}
+
 export function useChatModal(config: ChatModalConfig = {}) {
   const calendarId = config.calendarId || DEFAULT_CALENDAR_ID;
-  const userId = config.userId;
+  const userId = config.userId || DEFAULT_USER_ID;
 
   const [chatOpen, setChatOpen] = useState(false);
   const [ttsEnabled, setTtsEnabled] = useState(false);
-  const [sessionId] = useState(() => buildSessionId());
-
-  const [sessions, setSessions] = useState<ChatSession[]>([
-    {
-      id: "s1",
-      title: "Chat 1",
-      messages: [
-        {
-          id: "m1",
-          role: "agent",
-          text: "Made An Appointment For Me",
-          createdAt: Date.now() - 50000,
-        },
-        {
-          id: "m2",
-          role: "agent",
-          text: "Ok Sir! Who is the appointment with, and when should it be?",
-          createdAt: Date.now() - 49000,
-        },
-        {
-          id: "m3",
-          role: "user",
-          text: "With my advisor, tomorrow afternoon",
-          tokens: tokenize("With my advisor, tomorrow afternoon"),
-          createdAt: Date.now() - 48000,
-        },
-        {
-          id: "m4",
-          role: "agent",
-          text: "Got it. What duration do you want? 30 or 60 minutes?",
-          createdAt: Date.now() - 47000,
-        },
-        {
-          id: "m5",
-          role: "user",
-          text: "30 minutes",
-          tokens: tokenize("30 minutes"),
-          createdAt: Date.now() - 46000,
-        },
-      ],
-    },
-    { id: "s2", title: "Chat 2", messages: [] },
-    { id: "s3", title: "Chat 3", messages: [] },
-    { id: "s4", title: "Chat 4", messages: [] },
-    { id: "s5", title: "Chat 5", messages: [] },
-  ]);
-
-  const [activeSessionId, setActiveSessionId] = useState("s1");
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [chatInput, setChatInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [initialized, setInitialized] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // STT state
   const [speechState, setSpeechState] = useState<SpeechRecognitionState>({ recognition: null, isRecording: false });
+
+  // Load sessions from database only when chat is opened
+  useEffect(() => {
+    if (!chatOpen || initialized) return;
+
+    async function loadSessions() {
+      try {
+        setLoading(true);
+        const apiSessions = await fetchChatSessions(userId);
+        
+        if (apiSessions.length > 0) {
+          const transformedSessions = apiSessions.map(transformApiSession);
+          setSessions(transformedSessions);
+          setActiveSessionId(transformedSessions[0].id);
+        } else {
+          // Create a new session if none exist
+          try {
+            const newSession = await createChatSession(userId, "Chat 1");
+            const transformed = transformApiSession(newSession);
+            setSessions([transformed]);
+            setActiveSessionId(transformed.id);
+          } catch {
+            // API not available, create local session
+            const fallbackSession: ChatSession = {
+              id: uid("s"),
+              title: "New Chat",
+              messages: [],
+            };
+            setSessions([fallbackSession]);
+            setActiveSessionId(fallbackSession.id);
+          }
+        }
+        setInitialized(true);
+      } catch (err) {
+        console.error("Failed to load chat sessions:", err);
+        // Fallback: create empty local session (API might not be available)
+        const fallbackSession: ChatSession = {
+          id: uid("s"),
+          title: "New Chat",
+          messages: [],
+        };
+        setSessions([fallbackSession]);
+        setActiveSessionId(fallbackSession.id);
+        setInitialized(true);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadSessions();
+  }, [chatOpen, initialized, userId]);
 
   useEffect(() => {
     const state = initSpeechRecognition({
@@ -109,7 +140,7 @@ export function useChatModal(config: ChatModalConfig = {}) {
   const toggleTts = () => setTtsEnabled((prev) => !prev);
 
   const appendSessionMessage = (role: "user" | "agent", text: string) => {
-    const newMessage = {
+    const newMessage: ChatMsg = {
       id: uid(role === "user" ? "msg" : "msg_ai"),
       role,
       text,
@@ -125,7 +156,7 @@ export function useChatModal(config: ChatModalConfig = {}) {
 
   const pushUserMessage = async (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed || !activeSessionId) return;
 
     const tokens = tokenize(trimmed);
 
@@ -138,7 +169,7 @@ export function useChatModal(config: ChatModalConfig = {}) {
             ...s.messages,
             {
               id: uid("msg"),
-              role: "user",
+              role: "user" as const,
               text: trimmed,
               tokens,
               createdAt: Date.now(),
@@ -154,7 +185,7 @@ export function useChatModal(config: ChatModalConfig = {}) {
     try {
       const response: LLMChatResponse = await sendLLMMessage({
         message: trimmed,
-        sessionId,
+        sessionId: activeSessionId,
         calendarId,
         userId,
         executeIntent: true,
@@ -188,11 +219,21 @@ export function useChatModal(config: ChatModalConfig = {}) {
     }
   };
 
-  const newSession = () => {
-    const id = uid("s");
-    setSessions((prev) => [{ id, title: `Chat ${prev.length + 1}`, messages: [] }, ...prev]);
-    setActiveSessionId(id);
-  };
+  const newSession = useCallback(async () => {
+    try {
+      const sessionNumber = sessions.length + 1;
+      const newSessionData = await createChatSession(userId, `Chat ${sessionNumber}`);
+      const transformed = transformApiSession(newSessionData);
+      setSessions((prev) => [transformed, ...prev]);
+      setActiveSessionId(transformed.id);
+    } catch (err) {
+      console.error("Failed to create new session:", err);
+      // Fallback: create local session
+      const id = uid("s");
+      setSessions((prev) => [{ id, title: `Chat ${prev.length + 1}`, messages: [] }, ...prev]);
+      setActiveSessionId(id);
+    }
+  }, [sessions.length, userId]);
 
   return {
     chatOpen,
@@ -211,5 +252,6 @@ export function useChatModal(config: ChatModalConfig = {}) {
     chatEndRef,
     isRecording: speechState.isRecording,
     toggleRecording,
+    loading,
   };
 }

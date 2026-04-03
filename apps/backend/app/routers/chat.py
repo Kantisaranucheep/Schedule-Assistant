@@ -1,13 +1,13 @@
 """Chat endpoint - connects frontend to LLM agent."""
 
 import uuid
-from typing import Optional
+from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.schemas.chat import ChatRequest, ChatResponse, IntentData, ActionResult
+from app.schemas.chat import ChatRequest, ChatResponse, IntentData, ActionResult, ChatSessionResponse, ChatMessageResponse
 from app.services import ChatService, EventService
 from app.agent import IntentParser, IntentExecutor, ParseRequest, ExecuteRequest, IntentType
 
@@ -396,3 +396,80 @@ async def agent_health():
         }
     except Exception as e:
         return {"status": "unhealthy", "error": str(e)}
+
+
+# ============================================================================
+# Chat Session Management Endpoints
+# ============================================================================
+
+
+@router.get("/sessions", response_model=List[ChatSessionResponse])
+async def get_user_sessions(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get all chat sessions for a user."""
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user_id format")
+    
+    chat_service = ChatService(db)
+    sessions = await chat_service.get_user_sessions(user_uuid)
+    return sessions
+
+
+@router.get("/sessions/{session_id}", response_model=ChatSessionResponse)
+async def get_session(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a specific chat session with messages."""
+    try:
+        session_uuid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session_id format")
+    
+    chat_service = ChatService(db)
+    session = await chat_service.get_session(session_uuid)
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    return session
+
+
+@router.post("/sessions", response_model=ChatSessionResponse)
+async def create_session(
+    user_id: str,
+    title: str = "New Chat",
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new chat session."""
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user_id format")
+    
+    session_uuid = uuid.uuid4()
+    chat_service = ChatService(db)
+    session = await chat_service.get_or_create_session(session_uuid, user_uuid, title)
+    return session
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+async def delete_session(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a chat session."""
+    try:
+        session_uuid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session_id format")
+    
+    chat_service = ChatService(db)
+    deleted = await chat_service.delete_session(session_uuid)
+    
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Session not found")

@@ -45,10 +45,11 @@ class ChatService:
         return result.scalar_one_or_none()
 
     async def get_user_sessions(self, user_id: UUID) -> List[ChatSession]:
-        """Get all sessions for a user."""
+        """Get all sessions for a user with their messages."""
         result = await self.db.execute(
             select(ChatSession)
             .where(ChatSession.user_id == user_id)
+            .options(selectinload(ChatSession.messages))
             .order_by(ChatSession.updated_at.desc())
         )
         return list(result.scalars().all())

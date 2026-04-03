@@ -237,6 +237,7 @@ export default function Home() {
             chatEndRef={chat.chatEndRef}
             isRecording={isRecording}
             toggleRecording={toggleRecording}
+            loading={chat.loading}
           />
 
           {/* ===== EVENT MODAL ===== */}
