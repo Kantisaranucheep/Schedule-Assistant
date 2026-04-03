@@ -9,7 +9,7 @@ interface ChatModalProps {
     isOpen: boolean;
     onClose: () => void;
     sessions: ChatSession[];
-    activeSessionId: string;
+    activeSessionId: string | null;
     setActiveSessionId: (id: string) => void;
     activeSession: ChatSession | undefined;
     chatInput: string;
@@ -22,6 +22,7 @@ interface ChatModalProps {
     chatEndRef: React.RefObject<HTMLDivElement | null>;
     isRecording: boolean;
     toggleRecording: () => void;
+    loading?: boolean;
 }
 
 export default function ChatModal({
@@ -41,6 +42,7 @@ export default function ChatModal({
     chatEndRef,
     isRecording,
     toggleRecording,
+    loading = false,
 }: ChatModalProps) {
     return (
         <div
@@ -87,24 +89,37 @@ export default function ChatModal({
                         className="flex-grow-1 overflow-auto p-2"
                         style={{ minHeight: 0 }}
                     >
-                        {sessions.map((s) => (
-                            <button
-                                key={s.id}
-                                type="button"
-                                className={`w-100 text-start btn btn-sm mb-1 position-relative ${s.id === activeSessionId
-                                    ? "bg-secondary bg-opacity-10 text-dark fw-bold border-start border-3 border-primary"
-                                    : "btn-ghost text-muted"
-                                    }`}
-                                style={{
-                                    paddingLeft: s.id === activeSessionId ? "11px" : "12px",
-                                    borderTopLeftRadius: 0,
-                                    borderBottomLeftRadius: 0,
-                                }}
-                                onClick={() => setActiveSessionId(s.id)}
-                            >
-                                {s.title}
-                            </button>
-                        ))}
+                        {loading ? (
+                            <div className="text-center text-muted py-4">
+                                <div className="spinner-border spinner-border-sm me-2" role="status">
+                                    <span className="visually-hidden">Loading...</span>
+                                </div>
+                                Loading chats...
+                            </div>
+                        ) : sessions.length === 0 ? (
+                            <div className="text-center text-muted py-4 small">
+                                No chats yet
+                            </div>
+                        ) : (
+                            sessions.map((s) => (
+                                <button
+                                    key={s.id}
+                                    type="button"
+                                    className={`w-100 text-start btn btn-sm mb-1 position-relative ${s.id === activeSessionId
+                                        ? "bg-secondary bg-opacity-10 text-dark fw-bold border-start border-3 border-primary"
+                                        : "btn-ghost text-muted"
+                                        }`}
+                                    style={{
+                                        paddingLeft: s.id === activeSessionId ? "11px" : "12px",
+                                        borderTopLeftRadius: 0,
+                                        borderBottomLeftRadius: 0,
+                                    }}
+                                    onClick={() => setActiveSessionId(s.id)}
+                                >
+                                    {s.title}
+                                </button>
+                            ))
+                        )}
                     </div>
 
                     <div
