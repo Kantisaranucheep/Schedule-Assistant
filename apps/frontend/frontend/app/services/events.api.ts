@@ -29,6 +29,35 @@ export interface EventCreateRequest {
   location?: string;
   notes?: string;
   color?: string;
+  timezone?: string; // IANA timezone e.g. "Asia/Bangkok"
+}
+
+/**
+ * Get the user's timezone from the browser
+ */
+export function getUserTimezone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
+/**
+ * Format a local Date to ISO string preserving the local timezone offset
+ * e.g., "2024-04-03T09:00:00+07:00" instead of "2024-04-03T02:00:00.000Z"
+ */
+export function toLocalISOString(date: Date): string {
+  const offset = -date.getTimezoneOffset();
+  const sign = offset >= 0 ? '+' : '-';
+  const absOffset = Math.abs(offset);
+  const hours = String(Math.floor(absOffset / 60)).padStart(2, '0');
+  const minutes = String(absOffset % 60).padStart(2, '0');
+  
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hour = String(date.getHours()).padStart(2, '0');
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  const second = String(date.getSeconds()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}${sign}${hours}:${minutes}`;
 }
 
 export interface CalendarResponse {

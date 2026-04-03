@@ -23,6 +23,7 @@ class EventCreate(EventBase):
     """Create event request."""
 
     calendar_id: UUID
+    timezone: Optional[str] = Field(default=None, max_length=50)  # IANA timezone e.g. "Asia/Bangkok"
 
 
 class EventUpdate(BaseModel):

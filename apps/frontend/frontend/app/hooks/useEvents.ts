@@ -8,7 +8,9 @@ import {
   createEvent, 
   fetchCalendars, 
   createCalendar,
-  EventCreateRequest 
+  EventCreateRequest,
+  getUserTimezone,
+  toLocalISOString
 } from "../services/events.api";
 import { transformApiEventsToEventMap, mergeEventsIntoMap } from "../utils/eventTransform";
 
@@ -143,12 +145,13 @@ export function useEvents() {
         const eventRequest: EventCreateRequest = {
           calendar_id: calendarId,
           title,
-          start_time: startTime.toISOString(),
-          end_time: endTime.toISOString(),
+          start_time: toLocalISOString(startTime),
+          end_time: toLocalISOString(endTime),
           all_day: mAllDay,
           location: mLocation.trim() || undefined,
           notes: mNotes.trim() || undefined,
           color: mColor || RAINBOW[1],
+          timezone: getUserTimezone(),
         };
 
         const createdEvent = await createEvent(eventRequest, true);

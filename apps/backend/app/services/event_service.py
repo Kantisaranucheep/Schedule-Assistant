@@ -1,6 +1,6 @@
 """Event service - CRUD operations with conflict detection."""
 
-from datetime import datetime
+from datetime import datetime, timezone as dt_timezone
 from typing import List, Optional
 from uuid import UUID
 
@@ -9,6 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Event
 from app.schemas import EventCreate, EventUpdate
+
+
+def ensure_timezone_aware(dt: datetime) -> datetime:
+    """Ensure a datetime is timezone-aware. If naive, assume UTC."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=dt_timezone.utc)
+    return dt
 
 
 class EventService:
@@ -66,8 +73,14 @@ class EventService:
         return list(result.scalars().all())
 
     async def create(self, data: EventCreate) -> Event:
-        """Create a new event."""
-        event = Event(**data.model_dump())
+        """Create a new event with timezone-aware datetimes."""
+        event_data = data.model_dump(exclude={"timezone"})
+        
+        # Ensure datetimes are timezone-aware
+        event_data["start_time"] = ensure_timezone_aware(event_data["start_time"])
+        event_data["end_time"] = ensure_timezone_aware(event_data["end_time"])
+        
+        event = Event(**event_data)
         self.db.add(event)
         await self.db.flush()
         await self.db.refresh(event)
