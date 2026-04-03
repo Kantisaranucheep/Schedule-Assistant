@@ -34,3 +34,23 @@
     transform: scale(1.0);
   }
 }
+
+/* Google Calendar-like Minimal Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Add a slight padding effect by using a border that matches the track/container background */
+::-webkit-scrollbar-thumb {
+  background-color: rgba(153, 153, 153, 0.6);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(153, 153, 153, 0.8);
+}

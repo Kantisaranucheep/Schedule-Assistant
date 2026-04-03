@@ -9,6 +9,7 @@ interface SidebarProps {
     onProfileClick: () => void;
     onLogoClick: () => void;
     onEventClick: (dateKey: string) => void;
+    onViewEvent: (dateKey: string, ev: Ev) => void;
 }
 
 export default function Sidebar({
@@ -18,6 +19,7 @@ export default function Sidebar({
     onProfileClick,
     onLogoClick,
     onEventClick,
+    onViewEvent,
 }: SidebarProps) {
     // Sidebar "today"
     const TODAY = useMemo(() => new Date(), []);
@@ -100,14 +102,14 @@ export default function Sidebar({
                                 <div
                                     className="d-flex gap-2 align-items-start p-2 rounded-3 transition-all hover-white-10"
                                     key={`${item.dateKey}-${item.id}`}
-                                    style={{ cursor: "pointer" }}
+                                    style={{ cursor: "pointer", position: "relative" }}
                                     onClick={() => onEventClick(item.dateKey)}
                                 >
                                     <div
                                         className="rounded-circle flex-shrink-0 mt-1"
                                         style={{ width: 8, height: 8, background: item.color }}
                                     />
-                                    <div className="d-flex flex-column overflow-hidden">
+                                    <div className="d-flex flex-column overflow-hidden flex-grow-1">
                                         <div
                                             className="small text-white-50 font-monospace"
                                             style={{ fontSize: 11 }}
@@ -126,6 +128,20 @@ export default function Sidebar({
                                         >
                                             {item.kind}
                                         </div>
+                                    </div>
+                                    <div className="d-flex align-items-center ms-1 justify-content-center" onClick={(e) => e.stopPropagation()}>
+                                        <button
+                                            className="btn btn-sm border-0 p-1 lh-1 text-white-50 hover-text-white z-2"
+                                            style={{ position: "relative" }}
+                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onViewEvent(item.dateKey, item); }}
+                                            title="View details"
+                                        >
+                                            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                                                <circle cx="12" cy="12" r="10"></circle>
+                                                <line x1="12" y1="16" x2="12" y2="12"></line>
+                                                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                            </svg>
+                                        </button>
                                     </div>
                                 </div>
                             );

@@ -1,5 +1,11 @@
 export type Kind = "event" | "task";
 
+export type EventCategory = {
+    id: string;
+    name: string;
+    color: string;
+};
+
 export type Ev = {
     id: number;
     kind: Kind;
@@ -8,8 +14,12 @@ export type Ev = {
     endMin: number;
     title: string;
     color: string; // color = category
+    categoryId?: string;
     location: string;
     notes: string;
+    isRecurring?: boolean;
+    recurEndDate?: string;
+    recurDays?: number[]; // 0=Sun, 1=Mon, ..., 6=Sat
 };
 
 export type EventMap = Record<string, Ev[]>;
@@ -35,5 +45,5 @@ export type FilterCriteria = {
     locationFilter: string;
     fromDate: string;
     toDate: string;
-    selectedColors: string[];
+    selectedCategories: string[];
 };
