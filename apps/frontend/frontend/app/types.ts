@@ -48,11 +48,3 @@ export type FilterCriteria = {
     toDate: string;
     selectedCategories: string[];
 };
-export type FilterCriteria = {
-    searchText: string;
-    kindFilter: "all" | "event" | "task";
-    locationFilter: string;
-    fromDate: string;
-    toDate: string;
-    selectedCategories: string[];
-};
