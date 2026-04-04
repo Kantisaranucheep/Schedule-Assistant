@@ -1,16 +1,54 @@
 import React from "react";
 import { Ev } from "../types";
-import { addDaysISO, dayHeaderLabel, minutesToLabel } from "../utils";
-import { splitEventByHours, EventPortion } from "../utils/eventUtils";
+import { addDaysISO, minutesToLabel } from "../utils";
 
 interface DayViewProps {
     dayEvents: Ev[];
+    selectedDay: string;
+    onViewEvent: (dateKey: string, ev: Ev) => void;
+}
+
+interface EventPortion {
+    hour: number;
+    start: number; // minutes within hour (0-60)
+    end: number; // minutes within hour (0-60)
+    event: Ev;
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
+function splitEventByHours(ev: Ev): EventPortion[] {
+    const startTotal = ev.startMin ?? 0;
+    const endTotal = ev.endMin ?? 0;
+    const portions: EventPortion[] = [];
+
+    const startHour = Math.floor(startTotal / 60);
+    const endHour = Math.floor(endTotal / 60);
+
+    for (let h = startHour; h <= endHour; h++) {
+        if (h < 0 || h > 23) continue;
+        const hStart = h * 60;
+        const hEnd = (h + 1) * 60;
+
+        const pStart = Math.max(startTotal, hStart);
+        const pEnd = Math.min(endTotal, hEnd);
+
+        if (pStart < pEnd) {
+            portions.push({
+                hour: h,
+                start: pStart - hStart,
+                end: pEnd - hStart,
+                event: ev,
+            });
+        }
+    }
+    return portions;
+}
+
 export default function DayView({
     dayEvents,
+    selectedDay,
+    onViewEvent,
 }: DayViewProps) {
     return (
         <section className="flex-grow-1 d-flex flex-column overflow-hidden bg-white shadow-sm">
@@ -145,6 +183,12 @@ export default function DayView({
                                             title={`${p.event.title} • ${minutesToLabel(
                                                 p.event.startMin
                                             )} - ${minutesToLabel(p.event.endMin)}`}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onViewEvent(selectedDay, p.event);
+                                            }}
+                                            role="button"
+                                            tabIndex={0}
                                         >
                                             <div
                                                 className="text-truncate fw-bold text-dark"

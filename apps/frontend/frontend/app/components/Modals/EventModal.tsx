@@ -1,79 +1,233 @@
-import React from "react";
-import { Kind, Ev } from "../../types";
-import { RAINBOW, timeToMinutes } from "../../utils";
+import React, { useState, useMemo, useEffect } from "react";
+import { Kind, Ev, EventCategory } from "../../types";
+import {
+    RAINBOW,
+    timeToMinutes,
+    keyOf,
+    roundUpTimeHHMM,
+    nowTimeHHMM,
+    parseISODate,
+    prettyDow,
+    prettyMonth
+} from "../../utils";
 
 interface EventModalProps {
     isOpen: boolean;
     onClose: () => void;
-    mTitle: string;
-    setMTitle: (s: string) => void;
-    modalKind: Kind;
-    setModalKind: (k: Kind) => void;
-    saveEvent: (e: React.FormEvent) => void;
-    mDate: string;
-    setMDate: (s: string) => void;
-    mStart: string;
-    setMStart: (s: string) => void;
-    mEnd: string;
-    setMEnd: (s: string) => void;
-    mAllDay: boolean;
-    setMAllDay: (b: boolean) => void;
-    mLocation: string;
-    setMLocation: (s: string) => void;
-    mNotes: string;
-    setMNotes: (s: string) => void;
-    mColor: string;
-    setMColor: (s: string) => void;
-    minStart: string;
-    prettyDate: string;
-    realTodayKey: string;
-    isTodaySelected: boolean;
+    onSave: (event: Ev, date: string) => void;
     events: Record<string, Ev[]>;
+    editingEvent?: { event: Ev, dateKey: string } | null;
+    categories: EventCategory[];
+    onAddCategory: (cat: EventCategory) => void;
 }
 
 export default function EventModal({
     isOpen,
     onClose,
-    mTitle,
-    setMTitle,
-    modalKind,
-    setModalKind,
-    saveEvent,
-    mDate,
-    setMDate,
-    mStart,
-    setMStart,
-    mEnd,
-    setMEnd,
-    mAllDay,
-    setMAllDay,
-    mLocation,
-    setMLocation,
-    mNotes,
-    setMNotes,
-    mColor,
-    setMColor,
-    minStart,
-    prettyDate,
-    realTodayKey,
-    isTodaySelected,
+    onSave,
     events,
+    editingEvent,
+    categories,
+    onAddCategory,
 }: EventModalProps) {
+    const realTodayKey = useMemo(() => keyOf(new Date()), []);
+
+    // Form State
+    const [modalKind, setModalKind] = useState<Kind>("event");
+    const [mTitle, setMTitle] = useState("");
+    const [mDate, setMDate] = useState<string>(realTodayKey);
+    const [mStart, setMStart] = useState("09:00");
+    const [mEnd, setMEnd] = useState("09:00");
+    const [mAllDay, setMAllDay] = useState(false);
+    const [mLocation, setMLocation] = useState("");
+    const [mNotes, setMNotes] = useState("");
+    const [mCategoryId, setMCategoryId] = useState<string>("");
+
+    const [isAddingCategory, setIsAddingCategory] = useState(false);
+    const [newCatName, setNewCatName] = useState("");
+    const [newCatColor, setNewCatColor] = useState("#007aff");
+
+    const [mIsRecurring, setMIsRecurring] = useState(false);
+    const [mRecurEndDate, setMRecurEndDate] = useState<string>(realTodayKey);
+    const [mRecurDays, setMRecurDays] = useState<number[]>([]);
+
+    const isTodaySelected = mDate === realTodayKey;
+
+    // Reset form on open
+    useEffect(() => {
+        if (isOpen) {
+            const t = setTimeout(() => {
+                if (editingEvent) {
+                    const { event, dateKey } = editingEvent;
+                    setModalKind(event.kind);
+                    setMTitle(event.title);
+                    setMDate(dateKey);
+                    setMAllDay(event.allDay ?? false);
+                    setMLocation(event.location || "");
+                    setMNotes(event.notes || "");
+                    const catId = event.categoryId || categories.find(c => c.color === event.color)?.id || categories[0]?.id || "";
+                    setMCategoryId(catId);
+                    setMIsRecurring(event.isRecurring || false);
+                    setMRecurEndDate(event.recurEndDate || dateKey);
+                    setMRecurDays(event.recurDays || []);
+                    if (event.allDay) {
+                        setMStart("09:00");
+                        setMEnd("09:00");
+                    } else {
+                        const sH = Math.floor((event.startMin || 0) / 60).toString().padStart(2, '0');
+                        const sM = ((event.startMin || 0) % 60).toString().padStart(2, '0');
+                        setMStart(`${sH}:${sM}`);
+
+                        const eH = Math.floor((event.endMin || 0) / 60).toString().padStart(2, '0');
+                        const eM = ((event.endMin || 0) % 60).toString().padStart(2, '0');
+                        setMEnd(`${eH}:${eM}`);
+                    }
+                } else {
+                    setModalKind("event");
+                    setMTitle("");
+                    setMDate(realTodayKey);
+                    setMStart("09:00");
+                    setMEnd("09:00");
+                    setMAllDay(false);
+                    setMLocation("");
+                    setMNotes("");
+                    setMCategoryId(categories[0]?.id || "");
+                    setIsAddingCategory(false);
+                    setNewCatName("");
+                    setMIsRecurring(false);
+                    setMRecurEndDate(realTodayKey);
+                    setMRecurDays([]);
+                }
+            }, 0);
+            return () => clearTimeout(t);
+        }
+    }, [isOpen, realTodayKey, editingEvent, categories]);
+
+    const minStart = useMemo(() => {
+        if (!isTodaySelected || mAllDay) return "";
+        return roundUpTimeHHMM(nowTimeHHMM(), 5);
+    }, [isTodaySelected, mAllDay]);
+
+    const handleStartChange = (val: string) => {
+        let newVal = val;
+        if (isTodaySelected && !mAllDay) {
+            const ms = roundUpTimeHHMM(nowTimeHHMM(), 5);
+            if (val < ms) newVal = ms;
+        }
+        setMStart(newVal);
+        if (mEnd < newVal) setMEnd(newVal);
+    };
+
+    const handleEndChange = (val: string) => {
+        let newVal = val;
+        if (isTodaySelected && !mAllDay) {
+            const ms = roundUpTimeHHMM(nowTimeHHMM(), 5);
+            if (val < ms) newVal = ms;
+        }
+        if (newVal < mStart) newVal = mStart;
+        setMEnd(newVal);
+    };
+
+    const handleDateChange = (val: string) => {
+        setMDate(val);
+        if (val === realTodayKey && !mAllDay) {
+            const ms = roundUpTimeHHMM(nowTimeHHMM(), 5);
+            if (mStart < ms) {
+                setMStart(ms);
+                if (mEnd < ms) setMEnd(ms);
+            }
+        }
+    };
+
     const startMinVal = mAllDay ? 0 : timeToMinutes(mStart);
     const endMinVal = mAllDay ? 0 : timeToMinutes(mEnd);
     const duration = endMinVal - startMinVal;
 
     const existingOnDay = events[mDate] || [];
     const conflict = !mAllDay && existingOnDay.find(ex => {
+        if (editingEvent && ex.id === editingEvent.event.id) return false;
         if (ex.allDay) return false;
         return (startMinVal < (ex.endMin ?? 0)) && (endMinVal > (ex.startMin ?? 0));
     });
 
-    const isDurationTooShort = !mAllDay && duration > 0 && duration < 5;
+    const isDurationTooShort = !mAllDay && duration < 5;
     const isPastTime = !mAllDay && isTodaySelected && mStart < minStart;
     const isInvalidTime = !mAllDay && endMinVal < startMinVal;
 
     const canSave = mTitle.trim() !== "" && !conflict && !isDurationTooShort && !isPastTime && !isInvalidTime;
+
+    function saveEvent(e: React.FormEvent) {
+        e.preventDefault();
+        const title = mTitle.trim();
+        if (!title) return;
+
+        if (mDate < realTodayKey) {
+            alert("You cannot choose a past date.");
+            return;
+        }
+
+        if (!mAllDay) {
+            if (isTodaySelected) {
+                const ms = roundUpTimeHHMM(nowTimeHHMM(), 5);
+                if (mStart < ms) {
+                    alert("Start time cannot be in the past.");
+                    setMStart(ms);
+                    return;
+                }
+            }
+            if (isInvalidTime) {
+                alert("End time cannot be earlier than start time.");
+                setMEnd(mStart);
+                return;
+            }
+            if (isDurationTooShort) {
+                alert("Event duration must be at least 5 minutes.");
+                return;
+            }
+            if (conflict) {
+                alert(`Time conflict! You cannot have multiple tasks at the same time (overlaps with "${conflict.title}").`);
+                return;
+            }
+        }
+
+        if (mIsRecurring) {
+            if (mRecurEndDate < mDate) {
+                alert("Recurring end date cannot be before start date.");
+                return;
+            }
+            if (mRecurDays.length === 0) {
+                alert("Please select at least one day of the week for the recurring event.");
+                return;
+            }
+        }
+
+        const selectedCat = categories.find(c => c.id === mCategoryId);
+
+        const newItem: Ev = {
+            id: Date.now(),
+            kind: modalKind,
+            allDay: mAllDay,
+            startMin: startMinVal,
+            endMin: endMinVal,
+            title,
+            categoryId: mCategoryId,
+            color: selectedCat ? selectedCat.color : (editingEvent ? editingEvent.event.color : RAINBOW[1]),
+            location: mLocation.trim(),
+            notes: mNotes.trim(),
+            ...(mIsRecurring ? {
+                isRecurring: true,
+                recurEndDate: mRecurEndDate,
+                recurDays: mRecurDays,
+            } : {})
+        };
+
+        onSave(newItem, mDate);
+    }
+
+    const prettyDate = useMemo(() => {
+        const dt = parseISODate(mDate);
+        return `${prettyDow(dt)}, ${dt.getDate()} ${prettyMonth(dt)}`;
+    }, [mDate]);
 
     return (
         <div
@@ -168,7 +322,7 @@ export default function EventModal({
                                         style={{ width: 120 }}
                                         type="time"
                                         value={mStart}
-                                        onChange={(e) => setMStart(e.target.value)}
+                                        onChange={(e) => handleStartChange(e.target.value)}
                                         disabled={mAllDay}
                                         min={
                                             mAllDay
@@ -184,7 +338,7 @@ export default function EventModal({
                                         style={{ width: 120 }}
                                         type="time"
                                         value={mEnd}
-                                        onChange={(e) => setMEnd(e.target.value)}
+                                        onChange={(e) => handleEndChange(e.target.value)}
                                         disabled={mAllDay}
                                         min={mAllDay ? undefined : mStart}
                                     />
@@ -208,7 +362,7 @@ export default function EventModal({
 
                                 {conflict && (
                                     <div className="mt-2 text-danger small fw-bold d-flex align-items-center gap-1">
-                                        ⚠️ Time conflict! Overlaps with "{conflict.title}"
+                                        ⚠️ Time conflict! Overlaps with &quot;{conflict.title}&quot;
                                     </div>
                                 )}
                                 {isDurationTooShort && (
@@ -231,9 +385,67 @@ export default function EventModal({
                                     className="form-control form-control-sm mt-2 border-0 bg-transparent px-0"
                                     type="date"
                                     value={mDate}
-                                    onChange={(e) => setMDate(e.target.value)}
+                                    onChange={(e) => handleDateChange(e.target.value)}
                                     min={realTodayKey}
                                 />
+
+                                <div className="form-check form-switch mt-3 d-flex align-items-center gap-2 px-0">
+                                    <input
+                                        className="form-check-input m-0 ms-1"
+                                        type="checkbox"
+                                        id="mIsRecurring"
+                                        style={{ transform: "scale(1.2)", cursor: editingEvent ? "not-allowed" : "pointer" }}
+                                        checked={mIsRecurring}
+                                        disabled={!!editingEvent}
+                                        onChange={(e) => setMIsRecurring(e.target.checked)}
+                                    />
+                                    <label className="form-check-label small fw-bold" htmlFor="mIsRecurring" style={{ cursor: "pointer" }}>
+                                        Recurring Event
+                                    </label>
+                                </div>
+
+                                {mIsRecurring && (
+                                    <div className="mt-3 p-3 bg-white rounded-3 border border-light-subtle d-flex flex-column gap-3 shadow-sm">
+                                        <div>
+                                            <label className="form-label small fw-bold text-secondary mb-1">Ends On</label>
+                                            <input
+                                                className="form-control form-control-sm border-0 bg-secondary bg-opacity-10 text-dark fw-bold rounded-2 px-3 py-2 w-auto"
+                                                type="date"
+                                                value={mRecurEndDate}
+                                                disabled={!!editingEvent}
+                                                onChange={(e) => setMRecurEndDate(e.target.value)}
+                                                min={mDate}
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="form-label small fw-bold text-secondary mb-2">Repeats On</label>
+                                            <div className="d-flex gap-2 flex-wrap">
+                                                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, idx) => {
+                                                    const isSelected = mRecurDays.includes(idx);
+                                                    return (
+                                                        <button
+                                                            key={day}
+                                                            type="button"
+                                                            disabled={!!editingEvent}
+                                                            className={`btn btn-sm rounded-circle fw-bold transition-all ${isSelected ? 'btn-primary shadow-sm text-white' : 'btn-light border border-light-subtle text-secondary'}`}
+                                                            style={{ width: 36, height: 36, padding: 0 }}
+                                                            onClick={() => {
+                                                                if (isSelected) {
+                                                                    setMRecurDays(mRecurDays.filter(d => d !== idx));
+                                                                } else {
+                                                                    setMRecurDays([...mRecurDays, idx]);
+                                                                }
+                                                            }}
+                                                        >
+                                                            {day[0]}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -312,27 +524,89 @@ export default function EventModal({
                                 </svg>
                             </div>
                             <div className="flex-grow-1 p-3 rounded-4 bg-light border">
-                                <div className="d-flex align-items-center gap-3 flex-wrap">
-                                    <span className="small fw-bold text-secondary">Color</span>
-                                    <div className="d-flex gap-2 flex-wrap">
-                                        {RAINBOW.map((c) => (
-                                            <div
-                                                key={c}
-                                                className={`rounded-circle border border-2 ${mColor === c
-                                                    ? "border-dark shadow-sm"
-                                                    : "border-transparent"
+                                <div className="d-flex align-items-center gap-3 flex-wrap w-100">
+                                    <span className="small fw-bold text-secondary">Category</span>
+                                    <div className="d-flex gap-2 flex-wrap align-items-center w-100">
+                                        {categories.map((c) => (
+                                            <button
+                                                key={c.id}
+                                                type="button"
+                                                className={`btn btn-sm rounded-pill d-flex align-items-center gap-2 transition-all ${mCategoryId === c.id
+                                                    ? "shadow-sm border-0"
+                                                    : "opacity-75 hover-opacity-100 border bg-light text-secondary"
                                                     }`}
                                                 style={{
-                                                    width: 24,
-                                                    height: 24,
-                                                    background: c,
-                                                    cursor: "pointer",
+                                                    fontSize: 12,
+                                                    fontWeight: 600,
+                                                    backgroundColor: mCategoryId === c.id ? `${c.color}20` : undefined,
+                                                    color: mCategoryId === c.id ? c.color : undefined,
+                                                    border: mCategoryId === c.id ? `1px solid ${c.color}` : undefined
                                                 }}
-                                                onClick={() => setMColor(c)}
-                                                title={c}
-                                            />
+                                                onClick={() => setMCategoryId(c.id)}
+                                                title={c.name}
+                                            >
+                                                <div
+                                                    className="rounded-circle shadow-sm"
+                                                    style={{
+                                                        width: 12,
+                                                        height: 12,
+                                                        backgroundColor: c.color,
+                                                    }}
+                                                />
+                                                {c.name}
+                                            </button>
                                         ))}
+                                        <button
+                                            type="button"
+                                            className="btn btn-sm btn-light rounded-pill border fw-bold text-secondary text-nowrap"
+                                            onClick={() => setIsAddingCategory(!isAddingCategory)}
+                                        >
+                                            + New Category
+                                        </button>
                                     </div>
+
+                                    {isAddingCategory && (
+                                        <div className="w-100 mt-2 p-3 bg-secondary bg-opacity-10 rounded-3 border shadow-sm">
+                                            <div className="d-flex flex-column gap-2">
+                                                <label className="small fw-bold text-dark">Create Custom Category</label>
+                                                <div className="d-flex gap-2 align-items-center">
+                                                    <input
+                                                        type="text"
+                                                        className="form-control form-control-sm border-0"
+                                                        placeholder="Category Name"
+                                                        value={newCatName}
+                                                        onChange={(e) => setNewCatName(e.target.value)}
+                                                    />
+                                                    <input
+                                                        type="color"
+                                                        className="form-control form-control-sm form-control-color border-0 p-1"
+                                                        value={newCatColor}
+                                                        onChange={(e) => setNewCatColor(e.target.value)}
+                                                        title="Choose your color"
+                                                        style={{ width: 40, cursor: 'pointer' }}
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-sm btn-dark fw-bold rounded-pill px-3"
+                                                        disabled={!newCatName.trim()}
+                                                        onClick={() => {
+                                                            const newCat = {
+                                                                id: `cat-${Date.now()}`,
+                                                                name: newCatName.trim(),
+                                                                color: newCatColor
+                                                            };
+                                                            onAddCategory(newCat);
+                                                            setMCategoryId(newCat.id);
+                                                            setIsAddingCategory(false);
+                                                            setNewCatName("");
+                                                        }}
+                                                    >
+                                                        Add
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>

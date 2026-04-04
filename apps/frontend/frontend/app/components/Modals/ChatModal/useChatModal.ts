@@ -235,10 +235,40 @@ export function useChatModal(config: ChatModalConfig = {}) {
     }
   }, [sessions.length, userId]);
 
+  const renameSession = useCallback((sessionId: string, newTitle: string) => {
+    if (!newTitle.trim()) return;
+    setSessions((prev) =>
+      prev.map((s) => (s.id === sessionId ? { ...s, title: newTitle } : s))
+    );
+    // API call would go here
+    console.log(`Renaming session ${sessionId} to ${newTitle}`);
+  }, []);
+
+  const deleteSession = useCallback((sessionId: string) => {
+    setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+    if (activeSessionId === sessionId) {
+      setActiveSessionId(null);
+    }
+    // API call would go here
+    console.log(`Deleting session ${sessionId}`);
+  }, [activeSessionId]);
+
+  const togglePinSession = useCallback((sessionId: string) => {
+    setSessions((prev) =>
+      prev.map((s) => (s.id === sessionId ? { ...s, isPinned: !s.isPinned } : s))
+    );
+  }, []);
+
+  const sortedSessions = useMemo(() => {
+    const pinned = sessions.filter((s) => s.isPinned);
+    const others = sessions.filter((s) => !s.isPinned);
+    return [...pinned, ...others];
+  }, [sessions]);
+
   return {
     chatOpen,
     setChatOpen,
-    sessions,
+    sessions: sortedSessions,
     activeSessionId,
     setActiveSessionId,
     activeSession,
@@ -246,6 +276,9 @@ export function useChatModal(config: ChatModalConfig = {}) {
     setChatInput,
     pushUserMessage,
     newSession,
+    renameSession,
+    deleteSession,
+    togglePinSession,
     isTyping,
     ttsEnabled,
     toggleTts,

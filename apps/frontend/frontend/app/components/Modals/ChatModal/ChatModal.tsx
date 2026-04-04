@@ -16,6 +16,9 @@ interface ChatModalProps {
     setChatInput: (s: string) => void;
     pushUserMessage: (s: string) => void;
     newSession: () => void;
+    renameSession: (id: string, title: string) => void;
+    deleteSession: (id: string) => void;
+    togglePinSession: (id: string) => void;
     isTyping: boolean;
     ttsEnabled: boolean;
     toggleTts: () => void;
@@ -36,6 +39,9 @@ export default function ChatModal({
     setChatInput,
     pushUserMessage,
     newSession,
+    renameSession,
+    deleteSession,
+    togglePinSession,
     isTyping,
     ttsEnabled,
     toggleTts,
@@ -44,6 +50,149 @@ export default function ChatModal({
     toggleRecording,
     loading = false,
 }: ChatModalProps) {
+    const [editingId, setEditingId] = React.useState<string | null>(null);
+    const [editTitle, setEditTitle] = React.useState("");
+    const [menuOpenId, setMenuOpenId] = React.useState<string | null>(null);
+
+    const menuRef = React.useRef<HTMLDivElement>(null);
+
+    React.useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+                setMenuOpenId(null);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const handleStartEdit = (sessionId: string, currentTitle: string) => {
+        setEditingId(sessionId);
+        setEditTitle(currentTitle);
+        setMenuOpenId(null);
+    };
+
+    const handleSaveEdit = () => {
+        if (editingId && editTitle.trim()) {
+            renameSession(editingId, editTitle.trim());
+        }
+        setEditingId(null);
+    };
+
+    const handleKeyDownEdit = (e: React.KeyboardEvent) => {
+        if (e.key === "Enter") handleSaveEdit();
+        if (e.key === "Escape") setEditingId(null);
+    };
+
+    const renderSessionItem = (s: ChatSession) => {
+        const isActive = s.id === activeSessionId;
+        const isEditing = editingId === s.id;
+        const isMenuOpen = menuOpenId === s.id;
+
+        if (isEditing) {
+            return (
+                <div key={s.id} className="px-2 py-1">
+                    <input
+                        autoFocus
+                        className="form-control form-control-sm rounded-3 shadow-sm border-primary"
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        onBlur={handleSaveEdit}
+                        onKeyDown={handleKeyDownEdit}
+                    />
+                </div>
+            );
+        }
+
+        return (
+            <div key={s.id} className="position-relative mb-1 group px-2">
+                <div className={`d-flex align-items-center rounded-3 position-relative transition-all ${isActive ? "bg-primary bg-opacity-10" : "hover-bg-light"
+                    }`}
+                    style={{ height: 36 }}
+                    onClick={() => setActiveSessionId(s.id)}
+                >
+                    {/* Pin indicator */}
+                    {s.isPinned && (
+                        <span className="ms-2 small" title="Pinned">📍</span>
+                    )}
+
+                    <button
+                        type="button"
+                        className={`flex-grow-1 text-start btn btn-sm border-0 shadow-none px-2 text-truncate ${isActive ? "fw-bold text-dark" : "text-muted"
+                            }`}
+                        style={{ fontSize: '0.875rem' }}
+                    >
+                        {s.title}
+                    </button>
+
+                    {/* Menu Trigger */}
+                    <div className="position-relative" ref={isMenuOpen ? menuRef : null}>
+                        <button
+                            type="button"
+                            className={`btn btn-sm border-0 p-0 me-1 d-flex align-items-center justify-content-center opacity-0 group-hover-opacity-100 ${isMenuOpen ? "opacity-100" : ""}`}
+                            style={{ width: 24, height: 24, transition: 'opacity 0.2s' }}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setMenuOpenId(isMenuOpen ? null : s.id);
+                            }}
+                        >
+                            <span style={{ fontSize: '1.2rem', lineHeight: 0, marginTop: -8 }}>...</span>
+                        </button>
+
+                        {/* Dropdown Menu */}
+                        {isMenuOpen && (
+                            <div
+                                className="position-absolute bg-white shadow-lg border rounded-3 py-1 z-3"
+                                style={{
+                                    top: '100%',
+                                    right: 0,
+                                    width: 140,
+                                    marginTop: 4
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <button
+                                    className="w-100 text-start btn btn-sm btn-light border-0 rounded-0 px-3 py-2 d-flex align-items-center gap-2"
+                                    onClick={() => {
+                                        togglePinSession(s.id);
+                                        setMenuOpenId(null);
+                                    }}
+                                >
+                                    <span>{s.isPinned ? "📍 Unpin" : "📌 Pin"}</span>
+                                </button>
+                                <button
+                                    className="w-100 text-start btn btn-sm btn-light border-0 rounded-0 px-3 py-2 d-flex align-items-center gap-2"
+                                    onClick={() => handleStartEdit(s.id, s.title)}
+                                >
+                                    <span>Rename</span>
+                                </button>
+                                <div className="border-top my-1"></div>
+                                <button
+                                    className="w-100 text-start btn btn-sm btn-light border-0 rounded-0 px-3 py-2 text-danger d-flex align-items-center gap-2"
+                                    onClick={() => {
+                                        console.log("Deleting session from UI:", s.id);
+                                        deleteSession(s.id);
+                                        setMenuOpenId(null);
+                                    }}
+                                >
+                                    <span>Delete</span>
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+                <style jsx>{`
+                    .hover-bg-light:hover {
+                        background-color: rgba(0,0,0,0.05);
+                    }
+                    .group:hover .opacity-0 {
+                        opacity: 1 !important;
+                    }
+                `}</style>
+            </div>
+        );
+    };
+
     return (
         <div
             className={`position-fixed inset-0 z-3 p-4 d-flex align-items-center justify-content-center ${isOpen ? "" : "d-none"
@@ -101,39 +250,26 @@ export default function ChatModal({
                                 No chats yet
                             </div>
                         ) : (
-                            sessions.map((s) => (
-                                <button
-                                    key={s.id}
-                                    type="button"
-                                    className={`w-100 text-start btn btn-sm mb-1 position-relative ${s.id === activeSessionId
-                                        ? "bg-secondary bg-opacity-10 text-dark fw-bold border-start border-3 border-primary"
-                                        : "btn-ghost text-muted"
-                                        }`}
-                                    style={{
-                                        paddingLeft: s.id === activeSessionId ? "11px" : "12px",
-                                        borderTopLeftRadius: 0,
-                                        borderBottomLeftRadius: 0,
-                                    }}
-                                    onClick={() => setActiveSessionId(s.id)}
-                                >
-                                    {s.title}
-                                </button>
-                            ))
+                            <>
+                                {sessions.some(s => s.isPinned) && (
+                                    <div className="small fw-bold text-muted text-uppercase mb-2 px-2 mt-2" style={{ fontSize: '10px', letterSpacing: '0.05em' }}>Pinned</div>
+                                )}
+                                {sessions.map((s) => {
+                                    if (!s.isPinned) return null;
+                                    return renderSessionItem(s);
+                                })}
+
+                                {sessions.some(s => !s.isPinned) && (
+                                    <div className="small fw-bold text-muted text-uppercase mb-2 px-2 mt-3" style={{ fontSize: '10px', letterSpacing: '0.05em' }}>Recent</div>
+                                )}
+                                {sessions.map((s) => {
+                                    if (s.isPinned) return null;
+                                    return renderSessionItem(s);
+                                })}
+                            </>
                         )}
                     </div>
 
-                    <div
-                        className="d-flex align-items-center gap-2 px-3 border-top bg-light flex-shrink-0"
-                        style={{ height: 80, boxSizing: "border-box" }}
-                    >
-                        <div
-                            className="rounded-circle bg-secondary bg-opacity-25 d-flex align-items-center justify-content-center"
-                            style={{ width: 32, height: 32 }}
-                        >
-                            👤
-                        </div>
-                        <div className="small fw-bold">John Doe</div>
-                    </div>
                 </aside>
 
                 {/* Center: chat */}

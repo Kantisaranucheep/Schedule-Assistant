@@ -1,30 +1,56 @@
-import React from "react";
-import { Ev } from "../types";
-import { minutesToLabel } from "../utils";
+import React, { useMemo } from "react";
+import { Ev, EventMap } from "../types";
+import { minutesToLabel, keyOf, monthNames } from "../utils";
 
 interface SidebarProps {
-    today: Date;
-    todayMonthYear: string;
-    todayWeekday: string;
-    upcoming: ({ dateKey: string } & Ev)[];
+    filteredEvents: EventMap;
     onHotkeysClick: () => void;
     onChatClick: () => void;
     onProfileClick: () => void;
     onLogoClick: () => void;
     onEventClick: (dateKey: string) => void;
+    onViewEvent: (dateKey: string, ev: Ev) => void;
 }
 
 export default function Sidebar({
-    today,
-    todayMonthYear,
-    todayWeekday,
-    upcoming,
+    filteredEvents,
     onHotkeysClick,
     onChatClick,
     onProfileClick,
     onLogoClick,
     onEventClick,
+    onViewEvent,
 }: SidebarProps) {
+    // Sidebar "today"
+    const TODAY = useMemo(() => new Date(), []);
+
+    const todayWeekday = useMemo(
+        () => TODAY.toLocaleDateString("en-US", { weekday: "short" }),
+        [TODAY]
+    );
+    const todayMonthYear = useMemo(
+        () => `${monthNames[TODAY.getMonth()]} ${TODAY.getFullYear()}`,
+        [TODAY]
+    );
+
+    // Upcoming uses FILTERED events
+    const upcoming = useMemo(() => {
+        const todayKey = keyOf(TODAY);
+        const list: Array<{ dateKey: string } & Ev> = [];
+
+        Object.keys(filteredEvents).forEach((dateKey) => {
+            if (dateKey < todayKey) return;
+            filteredEvents[dateKey].forEach((ev) => list.push({ dateKey, ...ev }));
+        });
+
+        list.sort((a, b) => {
+            if (a.dateKey !== b.dateKey) return a.dateKey.localeCompare(b.dateKey);
+            return (a.startMin ?? 0) - (b.startMin ?? 0);
+        });
+
+        return list;
+    }, [filteredEvents, TODAY]);
+
     return (
         <aside
             className="d-flex flex-column gap-1 border-end border-dark bg-dark text-white"
@@ -54,7 +80,7 @@ export default function Sidebar({
                 </div>
                 <div className="d-flex align-items-baseline gap-2">
                     <div className="display-1 fw-bold lh-1" style={{ color: "#fd7e14" }}>
-                        {today.getDate()}
+                        {TODAY.getDate()}
                     </div>
                     <div className="small text-white-50">{todayWeekday}</div>
                 </div>
@@ -76,14 +102,14 @@ export default function Sidebar({
                                 <div
                                     className="d-flex gap-2 align-items-start p-2 rounded-3 transition-all hover-white-10"
                                     key={`${item.dateKey}-${item.id}`}
-                                    style={{ cursor: "pointer" }}
+                                    style={{ cursor: "pointer", position: "relative" }}
                                     onClick={() => onEventClick(item.dateKey)}
                                 >
                                     <div
                                         className="rounded-circle flex-shrink-0 mt-1"
                                         style={{ width: 8, height: 8, background: item.color }}
                                     />
-                                    <div className="d-flex flex-column overflow-hidden">
+                                    <div className="d-flex flex-column overflow-hidden flex-grow-1">
                                         <div
                                             className="small text-white-50 font-monospace"
                                             style={{ fontSize: 11 }}
@@ -102,6 +128,20 @@ export default function Sidebar({
                                         >
                                             {item.kind}
                                         </div>
+                                    </div>
+                                    <div className="d-flex align-items-center ms-1 justify-content-center" onClick={(e) => e.stopPropagation()}>
+                                        <button
+                                            className="btn btn-sm border-0 p-1 lh-1 text-white-50 hover-text-white z-2"
+                                            style={{ position: "relative" }}
+                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onViewEvent(item.dateKey, item); }}
+                                            title="View details"
+                                        >
+                                            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                                                <circle cx="12" cy="12" r="10"></circle>
+                                                <line x1="12" y1="16" x2="12" y2="12"></line>
+                                                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                            </svg>
+                                        </button>
                                     </div>
                                 </div>
                             );

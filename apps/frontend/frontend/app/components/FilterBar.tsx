@@ -1,47 +1,65 @@
-import React from "react";
-import { RAINBOW } from "../utils";
+import React, { useState, useMemo, useEffect } from "react";
+import { EventMap, FilterCriteria, EventCategory } from "../types";
 
 interface FilterBarProps {
-    searchText: string;
-    setSearchText: (s: string) => void;
-    filterOpen: boolean;
-    setFilterOpen: React.Dispatch<React.SetStateAction<boolean>>;
-    activeFilterCount: number;
-    kindFilter: "all" | "event" | "task";
-    setKindFilter: (k: "all" | "event" | "task") => void;
-    fromDate: string;
-    setFromDate: (d: string) => void;
-    toDate: string;
-    setToDate: (d: string) => void;
-    locationFilter: string;
-    setLocationFilter: (l: string) => void;
-    selectedColors: string[];
-    allColors: string[];
-    toggleColor: (c: string) => void;
-    clearAllFilters: () => void;
+    events: EventMap;
+    categories: EventCategory[];
+    onFilterChange: (filters: FilterCriteria) => void;
     onAddEvent: () => void;
 }
 
 export default function FilterBar({
-    searchText,
-    setSearchText,
-    filterOpen,
-    setFilterOpen,
-    activeFilterCount,
-    kindFilter,
-    setKindFilter,
-    fromDate,
-    setFromDate,
-    toDate,
-    setToDate,
-    locationFilter,
-    setLocationFilter,
-    selectedColors,
-    allColors,
-    toggleColor,
-    clearAllFilters,
+    events,
+    categories,
+    onFilterChange,
     onAddEvent,
 }: FilterBarProps) {
+    const [searchText, setSearchText] = useState("");
+    const [filterOpen, setFilterOpen] = useState(false);
+    const [kindFilter, setKindFilter] = useState<"all" | "event" | "task">("all");
+    const [locationFilter, setLocationFilter] = useState("");
+    const [fromDate, setFromDate] = useState<string>("");
+    const [toDate, setToDate] = useState<string>("");
+    const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+
+    const activeFilterCount = useMemo(() => {
+        let n = 0;
+        if (searchText.trim()) n++;
+        if (kindFilter !== "all") n++;
+        if (fromDate) n++;
+        if (toDate) n++;
+        if (locationFilter.trim()) n++;
+        if (selectedCategories.length > 0) n++;
+        return n;
+    }, [searchText, kindFilter, fromDate, toDate, locationFilter, selectedCategories]);
+
+    function toggleCategory(catId: string) {
+        setSelectedCategories((prev) =>
+            prev.includes(catId) ? prev.filter((x) => x !== catId) : [...prev, catId]
+        );
+    }
+
+    function clearAllFilters() {
+        setKindFilter("all");
+        setSelectedCategories([]);
+        setFromDate("");
+        setToDate("");
+        setLocationFilter("");
+        setSearchText("");
+    }
+
+    // Notify parent of filter changes
+    useEffect(() => {
+        onFilterChange({
+            searchText,
+            kindFilter,
+            locationFilter,
+            fromDate,
+            toDate,
+            selectedCategories,
+        });
+    }, [searchText, kindFilter, locationFilter, fromDate, toDate, selectedCategories, onFilterChange]);
+
     return (
         <div
             className="d-flex align-items-center justify-content-end gap-2"
@@ -79,8 +97,8 @@ export default function FilterBar({
             <div className="position-relative">
                 <button
                     className={`btn d-flex align-items-center justify-content-center p-0 position-relative shadow-sm transition-all ${filterOpen || activeFilterCount > 0
-                            ? "btn-dark"
-                            : "btn-light border border-secondary-subtle text-dark"
+                        ? "btn-dark"
+                        : "btn-light border border-secondary-subtle text-dark"
                         }`}
                     style={{ width: 36, height: 36, borderRadius: 10 }}
                     title="Filter"
@@ -133,8 +151,8 @@ export default function FilterBar({
                                     <button
                                         key={k}
                                         className={`flex-grow-1 btn btn-sm rounded-pill fw-semibold small ${kindFilter === k
-                                                ? "btn-white shadow-sm text-dark"
-                                                : "text-muted border-0 hover-bg-gray"
+                                            ? "btn-white shadow-sm text-dark"
+                                            : "text-muted border-0 hover-bg-gray"
                                             }`}
                                         onClick={() => setKindFilter(k)}
                                         type="button"
@@ -186,49 +204,36 @@ export default function FilterBar({
 
                         <div className="mb-4">
                             <label className="small fw-bold text-dark mb-2 d-block">
-                                Color Tag
+                                Categories
                             </label>
                             <div className="d-flex gap-2 flex-wrap">
-                                {allColors.map((c) => (
+                                {categories.map((cat) => (
                                     <button
-                                        key={c}
+                                        key={cat.id}
                                         type="button"
-                                        className={`rounded-circle d-flex align-items-center justify-content-center transition-all ${selectedColors.includes(c)
-                                                ? "ring-2 ring-offset-1"
-                                                : "opacity-75 hover-opacity-100"
+                                        className={`btn btn-sm rounded-pill d-flex align-items-center gap-2 transition-all ${selectedCategories.includes(cat.id)
+                                            ? "shadow-sm border-0"
+                                            : "opacity-75 hover-opacity-100 border bg-light text-secondary"
                                             }`}
                                         style={{
-                                            width: 28,
-                                            height: 28,
-                                            background: c,
-                                            cursor: "pointer",
-                                            border: selectedColors.includes(c)
-                                                ? `2px solid ${c}`
-                                                : "2px solid transparent", // Fallback
-                                            boxShadow: selectedColors.includes(c)
-                                                ? "0 0 0 2px white, 0 0 0 4px #e5e7eb"
-                                                : "none",
-                                            transform: selectedColors.includes(c)
-                                                ? "scale(1.1)"
-                                                : "scale(1)",
+                                            fontSize: 11,
+                                            fontWeight: 600,
+                                            backgroundColor: selectedCategories.includes(cat.id) ? `${cat.color}20` : undefined,
+                                            color: selectedCategories.includes(cat.id) ? cat.color : undefined,
+                                            borderColor: selectedCategories.includes(cat.id) ? cat.color : undefined
                                         }}
-                                        onClick={() => toggleColor(c)}
-                                        title={c}
+                                        onClick={() => toggleCategory(cat.id)}
+                                        title={cat.name}
                                     >
-                                        {selectedColors.includes(c) && (
-                                            <svg
-                                                width="14"
-                                                height="14"
-                                                viewBox="0 0 24 24"
-                                                fill="none"
-                                                stroke="white"
-                                                strokeWidth="3"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                            >
-                                                <polyline points="20 6 9 17 4 12"></polyline>
-                                            </svg>
-                                        )}
+                                        <div
+                                            className="rounded-circle"
+                                            style={{
+                                                width: 10,
+                                                height: 10,
+                                                backgroundColor: cat.color,
+                                            }}
+                                        />
+                                        {cat.name}
                                     </button>
                                 ))}
                             </div>
