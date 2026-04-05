@@ -8,11 +8,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.database import engine, Base
 # Import models to register with Base.metadata
-from app.models import User, UserSettings, Calendar, EventType, Event, ChatSession, ChatMessage
+from app.models import User, UserSettings, Calendar, EventType, Category, Event, Task, ChatSession, ChatMessage
 from app.routers import (
     health_router,
     calendars_router,
+    categories_router,
     events_router,
+    tasks_router,
     availability_router,
     chat_router,
     settings_router,
@@ -50,7 +52,9 @@ app.add_middleware(
 # Register routers
 app.include_router(health_router)
 app.include_router(calendars_router)
+app.include_router(categories_router)
 app.include_router(events_router)
+app.include_router(tasks_router)
 app.include_router(availability_router)
 app.include_router(chat_router)
 app.include_router(settings_router)

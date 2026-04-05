@@ -16,7 +16,7 @@ class EventBase(BaseModel):
     all_day: bool = False
     location: Optional[str] = Field(default=None, max_length=500)
     notes: Optional[str] = None
-    color: str = Field(default="#3B82F6", pattern=r"^#[0-9A-Fa-f]{6}$")
+    category_id: Optional[UUID] = None
 
 
 class EventCreate(EventBase):
@@ -35,7 +35,7 @@ class EventUpdate(BaseModel):
     all_day: Optional[bool] = None
     location: Optional[str] = Field(default=None, max_length=500)
     notes: Optional[str] = None
-    color: Optional[str] = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    category_id: Optional[UUID] = None
     status: Optional[str] = Field(default=None, pattern=r"^(confirmed|cancelled|tentative)$")
 
 

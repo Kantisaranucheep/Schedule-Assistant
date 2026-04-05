@@ -30,9 +30,9 @@ export const initialEvents: EventMap = {
     {
       id: 3,
       kind: "task",
-      allDay: false,
-      startMin: 540,
-      endMin: 600,
+      allDay: true,  // Tasks are always "all day"
+      startMin: 0,   // Tasks don't have time
+      endMin: 0,
       title: "First Division",
       color: RAINBOW[5],
       location: "Library",

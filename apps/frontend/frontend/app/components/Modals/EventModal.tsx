@@ -139,20 +139,22 @@ export default function EventModal({
         }
     };
 
-    const startMinVal = mAllDay ? 0 : timeToMinutes(mStart);
-    const endMinVal = mAllDay ? 0 : timeToMinutes(mEnd);
+    const startMinVal = mAllDay || modalKind === "task" ? 0 : timeToMinutes(mStart);
+    const endMinVal = mAllDay || modalKind === "task" ? 0 : timeToMinutes(mEnd);
     const duration = endMinVal - startMinVal;
 
     const existingOnDay = events[mDate] || [];
-    const conflict = !mAllDay && existingOnDay.find(ex => {
+    // Only check conflicts for events, not tasks
+    const conflict = modalKind === "event" && !mAllDay && existingOnDay.find(ex => {
         if (editingEvent && ex.id === editingEvent.event.id) return false;
-        if (ex.allDay) return false;
+        if (ex.allDay || ex.kind === "task") return false;
         return (startMinVal < (ex.endMin ?? 0)) && (endMinVal > (ex.startMin ?? 0));
     });
 
-    const isDurationTooShort = !mAllDay && duration < 5;
-    const isPastTime = !mAllDay && isTodaySelected && mStart < minStart;
-    const isInvalidTime = !mAllDay && endMinVal < startMinVal;
+    // Skip time validations for tasks
+    const isDurationTooShort = modalKind === "event" && !mAllDay && duration < 5;
+    const isPastTime = modalKind === "event" && !mAllDay && isTodaySelected && mStart < minStart;
+    const isInvalidTime = modalKind === "event" && !mAllDay && endMinVal < startMinVal;
 
     const canSave = mTitle.trim() !== "" && !conflict && !isDurationTooShort && !isPastTime && !isInvalidTime;
 
@@ -166,7 +168,8 @@ export default function EventModal({
             return;
         }
 
-        if (!mAllDay) {
+        // Only validate time for events, not tasks
+        if (modalKind === "event" && !mAllDay) {
             if (isTodaySelected) {
                 const ms = roundUpTimeHHMM(nowTimeHHMM(), 5);
                 if (mStart < ms) {
@@ -185,12 +188,13 @@ export default function EventModal({
                 return;
             }
             if (conflict) {
-                alert(`Time conflict! You cannot have multiple tasks at the same time (overlaps with "${conflict.title}").`);
+                alert(`Time conflict! You cannot have multiple events at the same time (overlaps with "${conflict.title}").`);
                 return;
             }
         }
 
-        if (mIsRecurring) {
+        // Recurring only applies to events
+        if (modalKind === "event" && mIsRecurring) {
             if (mRecurEndDate < mDate) {
                 alert("Recurring end date cannot be before start date.");
                 return;
@@ -206,15 +210,15 @@ export default function EventModal({
         const newItem: Ev = {
             id: Date.now(),
             kind: modalKind,
-            allDay: mAllDay,
-            startMin: startMinVal,
-            endMin: endMinVal,
+            allDay: modalKind === "task" ? true : mAllDay, // Tasks are always "all day"
+            startMin: modalKind === "task" ? 0 : startMinVal,
+            endMin: modalKind === "task" ? 0 : endMinVal,
             title,
             categoryId: mCategoryId,
             color: selectedCat ? selectedCat.color : (editingEvent ? editingEvent.event.color : RAINBOW[1]),
             location: mLocation.trim(),
             notes: mNotes.trim(),
-            ...(mIsRecurring ? {
+            ...(modalKind === "event" && mIsRecurring ? {
                 isRecurring: true,
                 recurEndDate: mRecurEndDate,
                 recurDays: mRecurDays,
@@ -306,8 +310,19 @@ export default function EventModal({
                                     width="24"
                                     height="24"
                                 >
-                                    <circle cx="12" cy="12" r="9"></circle>
-                                    <path d="M12 7v6l4 2"></path>
+                                    {modalKind === "task" ? (
+                                        <>
+                                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <circle cx="12" cy="12" r="9"></circle>
+                                            <path d="M12 7v6l4 2"></path>
+                                        </>
+                                    )}
                                 </svg>
                             </div>
 
@@ -317,65 +332,69 @@ export default function EventModal({
                                         {prettyDate}
                                     </span>
 
-                                    <input
-                                        className="form-control form-control-sm border-0 bg-secondary bg-opacity-10 text-dark fw-bold text-center p-1 rounded-2"
-                                        style={{ width: 120 }}
-                                        type="time"
-                                        value={mStart}
-                                        onChange={(e) => handleStartChange(e.target.value)}
-                                        disabled={mAllDay}
-                                        min={
-                                            mAllDay
-                                                ? undefined
-                                                : isTodaySelected
-                                                    ? minStart
-                                                    : "00:00"
-                                        }
-                                    />
+                                    {modalKind === "event" && (
+                                        <>
+                                            <input
+                                                className="form-control form-control-sm border-0 bg-secondary bg-opacity-10 text-dark fw-bold text-center p-1 rounded-2"
+                                                style={{ width: 120 }}
+                                                type="time"
+                                                value={mStart}
+                                                onChange={(e) => handleStartChange(e.target.value)}
+                                                disabled={mAllDay}
+                                                min={
+                                                    mAllDay
+                                                        ? undefined
+                                                        : isTodaySelected
+                                                            ? minStart
+                                                            : "00:00"
+                                                }
+                                            />
 
-                                    <input
-                                        className="form-control form-control-sm border-0 bg-secondary bg-opacity-10 text-dark fw-bold text-center p-1 rounded-2"
-                                        style={{ width: 120 }}
-                                        type="time"
-                                        value={mEnd}
-                                        onChange={(e) => handleEndChange(e.target.value)}
-                                        disabled={mAllDay}
-                                        min={mAllDay ? undefined : mStart}
-                                    />
+                                            <input
+                                                className="form-control form-control-sm border-0 bg-secondary bg-opacity-10 text-dark fw-bold text-center p-1 rounded-2"
+                                                style={{ width: 120 }}
+                                                type="time"
+                                                value={mEnd}
+                                                onChange={(e) => handleEndChange(e.target.value)}
+                                                disabled={mAllDay}
+                                                min={mAllDay ? undefined : mStart}
+                                            />
 
-                                    <div className="form-check form-switch ms-2">
-                                        <input
-                                            className="form-check-input"
-                                            type="checkbox"
-                                            id="mAllDay"
-                                            checked={mAllDay}
-                                            onChange={(e) => setMAllDay(e.target.checked)}
-                                        />
-                                        <label
-                                            className="form-check-label small fw-bold"
-                                            htmlFor="mAllDay"
-                                        >
-                                            All Day
-                                        </label>
-                                    </div>
+                                            <div className="form-check form-switch ms-2">
+                                                <input
+                                                    className="form-check-input"
+                                                    type="checkbox"
+                                                    id="mAllDay"
+                                                    checked={mAllDay}
+                                                    onChange={(e) => setMAllDay(e.target.checked)}
+                                                />
+                                                <label
+                                                    className="form-check-label small fw-bold"
+                                                    htmlFor="mAllDay"
+                                                >
+                                                    All Day
+                                                </label>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
 
-                                {conflict && (
+                                {modalKind === "event" && conflict && (
                                     <div className="mt-2 text-danger small fw-bold d-flex align-items-center gap-1">
                                         ⚠️ Time conflict! Overlaps with &quot;{conflict.title}&quot;
                                     </div>
                                 )}
-                                {isDurationTooShort && (
+                                {modalKind === "event" && isDurationTooShort && (
                                     <div className="mt-2 text-warning small fw-bold d-flex align-items-center gap-1">
                                         ⚠️ Minimum duration is 5 minutes
                                     </div>
                                 )}
-                                {isPastTime && (
+                                {modalKind === "event" && isPastTime && (
                                     <div className="mt-2 text-danger small fw-bold d-flex align-items-center gap-1">
                                         ⚠️ Cannot schedule in the past
                                     </div>
                                 )}
-                                {isInvalidTime && (
+                                {modalKind === "event" && isInvalidTime && (
                                     <div className="mt-2 text-danger small fw-bold d-flex align-items-center gap-1">
                                         ⚠️ End time must be after start time
                                     </div>
@@ -389,22 +408,24 @@ export default function EventModal({
                                     min={realTodayKey}
                                 />
 
-                                <div className="form-check form-switch mt-3 d-flex align-items-center gap-2 px-0">
-                                    <input
-                                        className="form-check-input m-0 ms-1"
-                                        type="checkbox"
-                                        id="mIsRecurring"
-                                        style={{ transform: "scale(1.2)", cursor: editingEvent ? "not-allowed" : "pointer" }}
-                                        checked={mIsRecurring}
-                                        disabled={!!editingEvent}
-                                        onChange={(e) => setMIsRecurring(e.target.checked)}
-                                    />
-                                    <label className="form-check-label small fw-bold" htmlFor="mIsRecurring" style={{ cursor: "pointer" }}>
-                                        Recurring Event
-                                    </label>
-                                </div>
+                                {modalKind === "event" && (
+                                    <div className="form-check form-switch mt-3 d-flex align-items-center gap-2 px-0">
+                                        <input
+                                            className="form-check-input m-0 ms-1"
+                                            type="checkbox"
+                                            id="mIsRecurring"
+                                            style={{ transform: "scale(1.2)", cursor: editingEvent ? "not-allowed" : "pointer" }}
+                                            checked={mIsRecurring}
+                                            disabled={!!editingEvent}
+                                            onChange={(e) => setMIsRecurring(e.target.checked)}
+                                        />
+                                        <label className="form-check-label small fw-bold" htmlFor="mIsRecurring" style={{ cursor: "pointer" }}>
+                                            Recurring Event
+                                        </label>
+                                    </div>
+                                )}
 
-                                {mIsRecurring && (
+                                {modalKind === "event" && mIsRecurring && (
                                     <div className="mt-3 p-3 bg-white rounded-3 border border-light-subtle d-flex flex-column gap-3 shadow-sm">
                                         <div>
                                             <label className="form-label small fw-bold text-secondary mb-1">Ends On</label>
