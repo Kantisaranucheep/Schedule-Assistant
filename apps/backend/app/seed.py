@@ -28,50 +28,57 @@ DEFAULT_CATEGORIES = [
 async def seed_database():
     """Seed database with demo data."""
     async with AsyncSessionLocal() as db:
-        # Check if demo user already exists
         from sqlalchemy import select
-        result = await db.execute(select(User).where(User.id == DEMO_USER_ID))
-        if result.scalar_one_or_none():
-            print("Demo user already exists, skipping seed.")
-            return
 
-        # Create demo user
-        demo_user = User(
-            id=DEMO_USER_ID,
-            email="demo@example.com",
-            name="Demo User",
-            timezone="Asia/Bangkok",
-        )
-        db.add(demo_user)
-
-        # Create user settings
-        user_settings = UserSettings(
-            user_id=DEMO_USER_ID,
-            working_hours_start="09:00",
-            working_hours_end="18:00",
-            buffer_minutes=10,
-        )
-        db.add(user_settings)
-
-        # Create default calendar
-        demo_calendar = Calendar(
-            id=DEMO_CALENDAR_ID,
-            user_id=DEMO_USER_ID,
-            name="My Calendar",
-            color="#3B82F6",
-            timezone="Asia/Bangkok",
-        )
-        db.add(demo_calendar)
-
-        # Create default categories for the calendar
-        for cat_data in DEFAULT_CATEGORIES:
-            category = Category(
-                id=cat_data["id"],
-                calendar_id=DEMO_CALENDAR_ID,
-                name=cat_data["name"],
-                color=cat_data["color"],
+        # Create demo user if missing
+        user_result = await db.execute(select(User).where(User.id == DEMO_USER_ID))
+        demo_user = user_result.scalar_one_or_none()
+        if demo_user is None:
+            demo_user = User(
+                id=DEMO_USER_ID,
+                email="demo@example.com",
+                name="Demo User",
+                timezone="Asia/Bangkok",
             )
-            db.add(category)
+            db.add(demo_user)
+
+        # Create user settings if missing
+        settings_result = await db.execute(select(UserSettings).where(UserSettings.user_id == DEMO_USER_ID))
+        if settings_result.scalar_one_or_none() is None:
+            db.add(
+                UserSettings(
+                    user_id=DEMO_USER_ID,
+                    working_hours_start="09:00",
+                    working_hours_end="18:00",
+                    buffer_minutes=10,
+                )
+            )
+
+        # Create default calendar if missing
+        calendar_result = await db.execute(select(Calendar).where(Calendar.id == DEMO_CALENDAR_ID))
+        demo_calendar = calendar_result.scalar_one_or_none()
+        if demo_calendar is None:
+            demo_calendar = Calendar(
+                id=DEMO_CALENDAR_ID,
+                user_id=DEMO_USER_ID,
+                name="My Calendar",
+                color="#3B82F6",
+                timezone="Asia/Bangkok",
+            )
+            db.add(demo_calendar)
+
+        # Create default categories for the calendar if missing
+        for cat_data in DEFAULT_CATEGORIES:
+            category_result = await db.execute(select(Category).where(Category.id == cat_data["id"]))
+            if category_result.scalar_one_or_none() is None:
+                db.add(
+                    Category(
+                        id=cat_data["id"],
+                        calendar_id=DEMO_CALENDAR_ID,
+                        name=cat_data["name"],
+                        color=cat_data["color"],
+                    )
+                )
 
         await db.commit()
 

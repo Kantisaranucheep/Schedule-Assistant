@@ -2,72 +2,87 @@
 
 FastAPI backend for the Schedule Assistant application.
 
+This guide is Docker-only. Use it to bring up the full backend stack, apply database migrations, load demo data, and pull the Ollama model.
+
 ## Tech Stack
 
-- **Framework**: FastAPI
-- **Server**: Uvicorn
-- **ORM**: SQLAlchemy 2.0 (async)
-- **Database Driver**: asyncpg
-- **Migrations**: Alembic
-- **Validation**: Pydantic v2
+- FastAPI
+- Uvicorn
+- SQLAlchemy 2.0 async
+- asyncpg
+- Alembic
+- Pydantic v2
 
 ---
 
-## 🚀 Quick Start (Docker - Recommended)
-
-This is the easiest way to get started. Everything runs in Docker containers.
+## Docker Setup
 
 ### Prerequisites
 
-1. **Install Docker Desktop**: https://www.docker.com/products/docker-desktop
-2. **Start Docker Desktop** and wait until it's fully running (green icon in system tray)
+1. Install Docker Desktop: https://www.docker.com/products/docker-desktop
+2. Start Docker Desktop and wait until it is fully running
 
-### Step-by-Step Setup
+### 1. Start the stack
 
-#### Step 1: Clone the repository
-```bash
-git clone <repository-url>
-cd Schedule-Assistant
-```
+From the repository root:
 
-#### Step 2: Start the containers
 ```powershell
-# Navigate to docker folder
 cd docker
-
-# Start PostgreSQL and Backend
-docker-compose up -d postgres backend
+docker-compose up -d postgres backend ollama
 ```
 
-Wait for containers to be healthy (about 30 seconds).
+Wait about 30 seconds for the containers to become healthy.
 
-#### Step 3: Run database migrations
+### 2. Apply migrations
+
 ```powershell
 docker exec -it schedule-assistant-api alembic upgrade head
 ```
 
-#### Step 4: Seed demo data
+This creates and updates the database schema, including categories and tasks.
+
+### 3. Seed demo data
+
 ```powershell
 docker exec -it schedule-assistant-api python -m app.seed
 ```
 
-#### Step 5: Verify it's working
-- **API Docs**: http://localhost:8000/docs
-- **Health Check**: http://localhost:8000/health
+The seed script is idempotent. If the demo user already exists, it will still create any missing calendar, settings, and default categories.
 
-### 🎉 Done! 
+Windows fallback if you need to run the seed file directly on the host:
 
-The backend is now running with:
-- **API**: http://localhost:8000
-- **PostgreSQL**: localhost:5433 (Docker container)
+```powershell
+python E:\1_Work\SE-Year3\SS2\KRR\project_GitVersion\Schedule-Assistant\apps\backend\app\seed.py
+```
 
-### Demo Credentials
-After seeding, you'll get a demo user ID. Use it for API requests:
-- **User Email**: `demo@example.com`
+### 4. Pull the Ollama model
+
+```powershell
+docker exec -it schedule-assistant-ollama ollama pull llama3.2
+```
+
+### 5. Verify the setup
+
+- API docs: http://localhost:8000/docs
+- Health check: http://localhost:8000/health
+- Agent health: http://localhost:8000/agent/health
+- Ollama API: http://localhost:11434
 
 ---
 
-## 🛠️ Useful Docker Commands
+## One-shot Bootstrap
+
+If you already started the containers, run these commands in order:
+
+```powershell
+docker exec -it schedule-assistant-api alembic upgrade head
+docker exec -it schedule-assistant-api python -m app.seed
+docker exec -it schedule-assistant-ollama ollama pull llama3.2
+```
+
+---
+
+## Useful Docker Commands
 
 ```powershell
 # Check container status
@@ -79,268 +94,142 @@ docker logs schedule-assistant-api -f
 # View database logs
 docker logs schedule-assistant-db -f
 
-# Stop all containers
+# View Ollama logs
+docker logs schedule-assistant-ollama -f
+
+# List Ollama models
+docker exec -it schedule-assistant-ollama ollama list
+
+# Stop the stack
 cd docker
 docker-compose down
 
-# Restart containers
-docker-compose restart
+# Stop and remove all data
+docker-compose down -v
 
-# Rebuild backend after code changes
+# Rebuild the backend container after code changes
 docker-compose up -d --build backend
-
-# Access database CLI
-docker exec -it schedule-assistant-db psql -U postgres -d schedule_assistant
-
-# Run a specific SQL query
-docker exec -it schedule-assistant-db psql -U postgres -d schedule_assistant -c "SELECT * FROM users;"
 ```
 
 ---
 
-## 🗄️ View Database in pgAdmin (Optional)
+## Demo Data
 
-If you have pgAdmin installed and want to browse the database:
+After seeding, the database contains:
 
-1. Open pgAdmin
-2. Right-click **Servers** → **Register** → **Server...**
-3. Fill in:
-
-| Tab | Field | Value |
-|-----|-------|-------|
-| General | Name | `Schedule Assistant (Docker)` |
-| Connection | Host | `localhost` |
-| Connection | Port | `5433` |
-| Connection | Database | `schedule_assistant` |
-| Connection | Username | `postgres` |
-| Connection | Password | `postgres` |
-
-4. Click **Save**
+- Demo user: `demo@example.com`
+- Demo calendar
+- Default categories:
+	- Urgent / Important
+	- Work
+	- Personal
+	- Health / Fitness
+	- Reminder
+	- Meetings / Appointments
+	- Social / Fun
 
 ---
-
-## 💻 Local Development (Without Docker)
-
-If you prefer running Python directly on your machine:
-
-### Prerequisites
-- Python 3.11+
-- PostgreSQL 14+ (local or Docker)
-
-### Step 1: Start PostgreSQL (via Docker)
-```powershell
-cd docker
-docker-compose up -d postgres
-```
-
-### Step 2: Setup Python environment
-```powershell
-cd apps/backend
-
-# Create virtual environment
-python -m venv .venv
-
-# Activate (Windows PowerShell)
-.\.venv\Scripts\Activate.ps1
-
-# Activate (Linux/Mac)
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### Step 3: Create .env file
-Create `apps/backend/.env`:
-```env
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5433/schedule_assistant
-APP_NAME=Schedule Assistant
-DEBUG=true
-SECRET_KEY=dev-secret-key
-CORS_ORIGINS=http://localhost:3000
-DEFAULT_TIMEZONE=Asia/Bangkok
-```
-
-### Step 4: Run migrations and seed
-```powershell
-alembic upgrade head
-python -m app.seed
-```
-
-### Step 5: Start the server
-```powershell
-uvicorn app.main:app --reload --port 8000
-```
-
----
-
-## 📁 Project Structure
-
-```
-app/
-├── main.py              # FastAPI application entry point
-├── core/
-│   ├── config.py        # Settings and configuration
-│   └── db.py            # Database connection setup
-├── models/              # SQLAlchemy ORM models (database tables)
-│   ├── user.py
-│   ├── calendar.py
-│   ├── event.py
-│   ├── event_type.py
-│   ├── user_settings.py
-│   ├── chat_session.py
-│   └── chat_message.py
-├── schemas/             # Pydantic schemas (API request/response)
-│   ├── user.py
-│   ├── calendar.py
-│   ├── event.py
-│   ├── event_type.py
-│   ├── chat.py
-│   └── settings.py
-├── routers/             # API endpoints
-│   ├── health.py        # Health check
-│   ├── calendars.py     # Calendar CRUD
-│   ├── events.py        # Event CRUD
-│   ├── chat.py          # Chat sessions
-│   ├── settings.py      # User settings
-│   └── agent.py         # AI Agent endpoints
-├── services/            # Business logic
-│   ├── availability.py  # Find available time slots
-│   └── conflicts.py     # Detect scheduling conflicts
-├── agent/               # AI Intent processing
-│   ├── parser.py        # Parse user text → Intent
-│   ├── executor.py      # Execute Intent → Action
-│   ├── schemas.py       # Intent data models
-│   └── llm_clients.py   # LLM client abstraction
-├── integrations/
-│   └── prolog_client.py # Prolog integration
-└── seed.py              # Database seeding script
-```
-
----
-
-## 📖 API Documentation
-
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-
----
-
-## 🔄 Database Migrations
-
-### Create a new migration
-
-```bash
-alembic revision --autogenerate -m "Description"
-```
-
-### Apply migrations
-
-```bash
-alembic upgrade head
-```
-
-### Rollback
-
-```bash
-alembic downgrade -1
-```
-
-## Testing
-
-```bash
-pytest
-```
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql+asyncpg://postgres:postgres@localhost:5432/schedule_assistant` |
-| `APP_NAME` | Application name | `Schedule Assistant` |
-| `DEBUG` | Enable debug mode | `true` |
-| `SECRET_KEY` | Secret key for security | `change-me-in-production` |
-| `CORS_ORIGINS` | Allowed CORS origins | `http://localhost:3000` |
-| `DEFAULT_TIMEZONE` | Default timezone | `Asia/Bangkok` |
-| `DEFAULT_WORKING_HOURS_START` | Working hours start | `09:00` |
-| `DEFAULT_WORKING_HOURS_END` | Working hours end | `18:00` |
+The backend container already sets these values in `docker-compose.yml`:
+
+| Variable | Value |
+|----------|-------|
+| `DATABASE_URL` | `postgresql+asyncpg://postgres:postgres@postgres:5432/schedule_assistant` |
+| `APP_NAME` | `Schedule Assistant` |
+| `DEBUG` | `true` |
+| `SECRET_KEY` | `docker-secret-key-change-in-production` |
+| `CORS_ORIGINS` | `http://localhost:3000` |
+| `DEFAULT_TIMEZONE` | `Asia/Bangkok` |
+| `AGENT_LLM_PROVIDER` | `ollama` |
+| `OLLAMA_BASE_URL` | `http://ollama:11434` |
+| `OLLAMA_MODEL` | `llama3.2` |
+| `PROLOG_MODE` | `subprocess` |
+| `PROLOG_PATH` | `/app/prolog` |
 
 ---
 
-## ⚠️ Troubleshooting
+## Troubleshooting
 
 ### Docker daemon not running
+
 **Error**: `open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified`
 
-**Solution**: Start Docker Desktop from Windows Start Menu and wait until it's fully running.
-
----
+**Fix**: Start Docker Desktop and wait until it is fully running.
 
 ### Port already in use
+
 **Error**: `Bind for 0.0.0.0:5433 failed: port is already allocated`
 
-**Solution**: 
-```powershell
-# Check what's using the port
-netstat -ano | findstr :5433
+**Fix**:
 
-# Stop all containers and restart
+```powershell
+netstat -ano | findstr :5433
 docker-compose down
-docker-compose up -d postgres backend
+docker-compose up -d postgres backend ollama
 ```
 
----
+### Database tables do not exist
 
-### Database tables don't exist
 **Error**: `relation "users" does not exist`
 
-**Solution**: Run migrations first:
+**Fix**:
+
 ```powershell
 docker exec -it schedule-assistant-api alembic upgrade head
 ```
 
----
+### Categories are missing
 
-### Container keeps restarting
-**Solution**: Check the logs:
+**Fix**: Rerun the seed command:
+
 ```powershell
-docker logs schedule-assistant-api
-docker logs schedule-assistant-db
-```
-
----
-
-### Reset everything (fresh start)
-```powershell
-cd docker
-
-# Stop and remove containers + volumes
-docker-compose down -v
-
-# Rebuild and start fresh
-docker-compose up -d --build postgres backend
-
-# Wait 30 seconds, then run migrations
-docker exec -it schedule-assistant-api alembic upgrade head
 docker exec -it schedule-assistant-api python -m app.seed
 ```
 
----
+### Ollama model is missing
 
-## 🧪 Testing the API
-
-### Quick test endpoints
+**Fix**:
 
 ```powershell
-# Health check
-curl http://localhost:8000/health
-
-# Get API info
-curl http://localhost:8000/
-
-# Check agent health
-curl http://localhost:8000/agent/health
+docker exec -it schedule-assistant-ollama ollama pull llama3.2
+docker exec -it schedule-assistant-ollama ollama list
 ```
 
-### Test with Swagger UI
-Open http://localhost:8000/docs in your browser and use the interactive API documentation.
+### Container keeps restarting
+
+**Fix**: Check logs.
+
+```powershell
+docker logs schedule-assistant-api
+docker logs schedule-assistant-db
+docker logs schedule-assistant-ollama
+```
+
+### Reset everything
+
+```powershell
+cd docker
+docker-compose down -v
+docker-compose up -d postgres backend ollama
+docker exec -it schedule-assistant-api alembic upgrade head
+docker exec -it schedule-assistant-api python -m app.seed
+docker exec -it schedule-assistant-ollama ollama pull llama3.2
+```
+
+---
+
+## API Endpoints
+
+- `GET /health` - backend health
+- `GET /docs` - Swagger UI
+- `GET /redoc` - ReDoc
+- `GET /agent/health` - Ollama/agent health
+
+---
+
+## Notes
+
+- The backend seed script now fills in missing data instead of stopping when the demo user already exists.
+- Use Docker commands from the repository root unless the step explicitly says otherwise.
