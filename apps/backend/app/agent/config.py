@@ -19,7 +19,7 @@ class AgentSettings(BaseSettings):
 
     # Ollama settings
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.2"
+    ollama_model: str = "neural-chat:7b"
     ollama_timeout: int = 60
 
     # Gemini settings

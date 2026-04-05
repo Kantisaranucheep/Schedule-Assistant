@@ -50,6 +50,12 @@ class ChatExecutor:
         - error: Optional error message
         """
         try:
+            # Get current date if not provided
+            if not current_date:
+                from zoneinfo import ZoneInfo
+                tz = ZoneInfo(timezone)
+                current_date = datetime.now(tz).strftime("%Y-%m-%d")
+
             # Parse user message with state context
             parse_result = await self.intent_parser.parse_with_state(
                 text=user_message,

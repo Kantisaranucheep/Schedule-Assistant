@@ -48,10 +48,18 @@ Return ONLY valid JSON with this structure:
   "clarification_question": "optional question if ambiguous"
 }
 
-For add_event_chat, extract: title, date (YYYY-MM-DD or relative like "tomorrow"), start_time (HH:MM), end_time (HH:MM), location (optional)
+**Detection rules:**
+- If user asks to LIST, SHOW, or CHECK events (e.g., "what's on today", "list my schedule", "show events"), → update_daily_chat with date_range
+- If user asks to ADD an event (e.g., "add meeting", "schedule", "book time"), → add_event_chat
+- If user asks to EDIT/UPDATE (e.g., "move meeting", "change time"), → edit_event_chat
+- If user asks to REMOVE/DELETE (e.g., "cancel event", "delete"), → remove_event_chat
+
+For add_event_chat, extract: title, date (flexible format: "tomorrow", "2024-12-25", "next Monday", etc.), start_time (HH:MM), end_time (HH:MM), location (optional)
 For edit_event_chat, extract: event_name, new_start_time, new_end_time, new_date (optional)
 For remove_event_chat, extract: event_name, date (optional)
-For update_daily_chat, extract: date_range ("today" or "this week" or "this month")
+For update_daily_chat, extract: date_range ("today" | "this week" | "this month" | specific date)
+
+**Date handling:** Accept any date format the user provides - don't force YYYY-MM-DD. The system will parse it.
 """,
 
             ConversationStateEnum.CHECK_CONFLICT: """You are detecting if the user wants help resolving a scheduling conflict.
@@ -139,8 +147,12 @@ Return ONLY valid JSON:
         """Parse user input with state-aware context."""
         system_prompt = self.get_system_prompt(current_state)
 
-        user_prompt = f"""Current date/time: {current_date or "today"}
+        # Format current date info for context
+        date_context = f"Today's date: {current_date}" if current_date else "Date context: unknown"
+
+        user_prompt = f"""{date_context}
 User timezone: {timezone}
+
 User message: {text}
 
 Parse this according to the current conversation state. Return ONLY valid JSON, no explanations."""

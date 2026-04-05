@@ -43,7 +43,7 @@ services:
       DEFAULT_TIMEZONE: Asia/Bangkok
       AGENT_LLM_PROVIDER: ollama
       OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: llama3.2
+      OLLAMA_MODEL: neural-chat:7b
       OLLAMA_HOST: ollama:11434
       PROLOG_MODE: subprocess
       PROLOG_PATH: /app/prolog
