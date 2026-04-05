@@ -146,6 +146,7 @@ export default function Home() {
         setViewingEvent(null);
         setHotkeysOpen(false);
         setChatOpen(false);
+        setChatV2Open(false);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -382,7 +383,7 @@ export default function Home() {
         <Sidebar
           filteredEvents={filteredEvents}
           onHotkeysClick={() => setHotkeysOpen(true)}
-          onChatClick={() => setChatOpen(true)}
+          onChatClick={() => setChatV2Open(true)}
           onProfileClick={() => { }}
           onLogoClick={goToToday}
           onEventClick={(dateKey) => {

@@ -34,21 +34,23 @@ class ChatButton:
 class ChatV2SendRequest:
     """Request to send message in chat."""
 
-    session_id: str
-    user_id: str
-    calendar_id: str
-    message: str
-    timezone: str = "Asia/Bangkok"
+    def __init__(self, session_id: str, user_id: str, calendar_id: str, message: str, timezone: str = "Asia/Bangkok"):
+        self.session_id = session_id
+        self.user_id = user_id
+        self.calendar_id = calendar_id
+        self.message = message
+        self.timezone = timezone
 
 
 class ChatV2Response:
     """Response from chat."""
 
-    reply: str
-    state: str
-    buttons: Optional[list] = None
-    table: Optional[dict] = None
-    error: Optional[str] = None
+    def __init__(self, reply: str, state: str, buttons: Optional[list] = None, table: Optional[dict] = None, error: Optional[str] = None):
+        self.reply = reply
+        self.state = state
+        self.buttons = buttons
+        self.table = table
+        self.error = error
 
     def dict(self):
         return {
@@ -63,9 +65,10 @@ class ChatV2Response:
 class ChatV2StartResponse:
     """Response when starting new chat."""
 
-    session_id: str
-    message: str
-    state: str
+    def __init__(self, session_id: str, message: str, state: str):
+        self.session_id = session_id
+        self.message = message
+        self.state = state
 
     def dict(self):
         return {
@@ -78,9 +81,10 @@ class ChatV2StartResponse:
 class ChatV2StopResponse:
     """Response when stopping chat."""
 
-    session_id: str
-    message: str
-    message_count: int
+    def __init__(self, session_id: str, message: str, message_count: int):
+        self.session_id = session_id
+        self.message = message
+        self.message_count = message_count
 
     def dict(self):
         return {
@@ -182,12 +186,14 @@ async def send_message(
         new_state = result.get("state", current_state)
         state_manager.update_state(session_uuid, ConversationStateEnum(new_state))
 
-        response = ChatV2Response()
-        response.reply = result.get("text", "")
-        response.state = new_state.value if hasattr(new_state, 'value') else str(new_state)
-        response.buttons = result.get("buttons")
-        response.table = result.get("table")
-        response.error = result.get("error")
+        new_state_value = new_state.value if hasattr(new_state, 'value') else str(new_state)
+        response = ChatV2Response(
+            reply=result.get("text", ""),
+            state=new_state_value,
+            buttons=result.get("buttons"),
+            table=result.get("table"),
+            error=result.get("error"),
+        )
 
         return response.dict()
 

@@ -53,6 +53,8 @@ export default function ChatModalV2({ isOpen, onClose, userId, calendarId }: Cha
   const initializeChat = async () => {
     try {
       setLoading(true);
+      console.log("[ChatModalV2] Starting chat with userId:", userId, "calendarId:", calendarId);
+
       const response = await fetch("/api/agent/chat-v2/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -63,9 +65,23 @@ export default function ChatModalV2({ isOpen, onClose, userId, calendarId }: Cha
         }),
       });
 
-      if (!response.ok) throw new Error("Failed to start chat");
+      console.log("[ChatModalV2] Response status:", response.status);
+      const responseText = await response.text();
+      console.log("[ChatModalV2] Response body:", responseText);
 
-      const data = await response.json();
+      if (!response.ok) {
+        let errorMsg = "Failed to start chat";
+        try {
+          const errorData = JSON.parse(responseText);
+          errorMsg = errorData.error || errorData.detail || errorMsg;
+        } catch {
+          errorMsg = `Backend error (${response.status}): ${responseText}`;
+        }
+        throw new Error(errorMsg);
+      }
+
+      const data = JSON.parse(responseText);
+      console.log("[ChatModalV2] Chat initialized:", data);
       setSessionId(data.session_id);
       setCurrentState(data.state);
 
@@ -79,12 +95,13 @@ export default function ChatModalV2({ isOpen, onClose, userId, calendarId }: Cha
         },
       ]);
     } catch (error) {
-      console.error("Chat init error:", error);
+      const errorMsg = error instanceof Error ? error.message : "Unknown error";
+      console.error("[ChatModalV2] Chat init error:", errorMsg);
       setMessages([
         {
           id: "error",
           role: "agent",
-          text: "Failed to start chat. Please refresh and try again.",
+          text: `Failed to start chat: ${errorMsg}`,
           timestamp: Date.now(),
         },
       ]);
@@ -122,9 +139,23 @@ export default function ChatModalV2({ isOpen, onClose, userId, calendarId }: Cha
         }),
       });
 
-      if (!response.ok) throw new Error("Failed to send message");
+      console.log("[ChatModalV2] Send response status:", response.status);
+      const responseText = await response.text();
+      console.log("[ChatModalV2] Send response body:", responseText);
 
-      const data = await response.json();
+      if (!response.ok) {
+        let errorMsg = "Failed to send message";
+        try {
+          const errorData = JSON.parse(responseText);
+          errorMsg = errorData.error || errorData.detail || errorMsg;
+        } catch {
+          errorMsg = `Backend error (${response.status}): ${responseText}`;
+        }
+        throw new Error(errorMsg);
+      }
+
+      const data = JSON.parse(responseText);
+      console.log("[ChatModalV2] Message sent successfully:", data);
       setCurrentState(data.state);
 
       // Add agent message
@@ -138,14 +169,15 @@ export default function ChatModalV2({ isOpen, onClose, userId, calendarId }: Cha
       };
       setMessages((prev) => [...prev, agentMsg]);
     } catch (error) {
-      console.error("Send message error:", error);
-      const errorMsg: ChatMessage = {
+      const errorMsg = error instanceof Error ? error.message : "Unknown error";
+      console.error("[ChatModalV2] Send message error:", errorMsg);
+      const errorMsg2: ChatMessage = {
         id: `error-${Date.now()}`,
         role: "agent",
-        text: "Error sending message. Please try again.",
+        text: `Error: ${errorMsg}`,
         timestamp: Date.now(),
       };
-      setMessages((prev) => [...prev, errorMsg]);
+      setMessages((prev) => [...prev, errorMsg2]);
     } finally {
       setIsTyping(false);
     }

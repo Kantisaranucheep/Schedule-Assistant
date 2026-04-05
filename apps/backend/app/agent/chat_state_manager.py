@@ -68,22 +68,10 @@ class ChatConversationState:
 class ChatStateManager:
     """Singleton managing all active chat sessions."""
 
-    _instance: Optional['ChatStateManager'] = None
-    _sessions: Dict[uuid.UUID, ChatConversationState] = {}
-    _timeout_minutes: int = 30
-
-    def __new__(cls) -> 'ChatStateManager':
-        """Singleton pattern."""
-        if cls._instance is None:
-            cls._instance = super(ChatStateManager, cls).__new__(cls)
-        return cls._instance
-
-    @classmethod
-    def get_instance(cls, timeout_minutes: int = 30) -> 'ChatStateManager':
-        """Get singleton instance."""
-        instance = cls()
-        instance._timeout_minutes = timeout_minutes
-        return instance
+    def __init__(self):
+        """Initialize chat state manager."""
+        self._sessions: Dict[uuid.UUID, ChatConversationState] = {}
+        self._timeout_minutes: int = 30
 
     def create_session(
         self,
@@ -201,5 +189,6 @@ def get_chat_state_manager(timeout_minutes: int = 30) -> ChatStateManager:
     """Get or create chat state manager instance."""
     global _state_manager
     if _state_manager is None:
-        _state_manager = ChatStateManager(timeout_minutes)
+        _state_manager = ChatStateManager()
+        _state_manager._timeout_minutes = timeout_minutes
     return _state_manager
