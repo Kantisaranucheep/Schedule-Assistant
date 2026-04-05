@@ -40,6 +40,35 @@ export type ChatSession = {
     messages: ChatMsg[];
     isPinned?: boolean;
 };
+
+// Chat V2 Types (new chat feature)
+export interface ChatButtonV2 {
+    label: string;
+    value: string;
+}
+
+export interface ChatTableV2 {
+    headers: string[];
+    rows: (string | number)[][];
+}
+
+export interface ChatMessageV2 {
+    id: string;
+    role: "user" | "agent";
+    text: string;
+    timestamp: number;
+    buttons?: ChatButtonV2[];
+    table?: ChatTableV2;
+}
+
+export interface ChatSessionV2 {
+    id: string;
+    title: string;
+    messages: ChatMessageV2[];
+    currentState: string;
+    createdAt: string;
+}
+
 export type FilterCriteria = {
     searchText: string;
     kindFilter: "all" | "event" | "task";

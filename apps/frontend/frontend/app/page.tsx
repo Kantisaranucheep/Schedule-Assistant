@@ -25,6 +25,7 @@ import MonthGrid from "./components/MonthGrid";
 import DayView from "./components/DayView";
 import HotkeysModal from "./components/Modals/HotkeysModal";
 import ChatModal from "./components/Modals/ChatModal/ChatModal";
+import ChatModalV2 from "./components/Modals/ChatModal/ChatModalV2";
 import { useChatModal } from "./components/Modals/ChatModal/useChatModal";
 import EventModal from "./components/Modals/EventModal";
 import ViewEventModal from "./components/Modals/ViewEventModal";
@@ -85,6 +86,7 @@ export default function Home() {
   // ===== Modals visibility =====
   const [hotkeysOpen, setHotkeysOpen] = useState(false);
   const { chatOpen, setChatOpen, ...chatProps } = useChatModal();
+  const [chatV2Open, setChatV2Open] = useState(false);
   const [eventModalOpen, setEventModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<{ event: Ev; dateKey: string } | null>(null);
   const [viewingEvent, setViewingEvent] = useState<{ event: Ev; dateKey: string } | null>(null);
@@ -498,6 +500,14 @@ export default function Home() {
             isRecording={chatProps.isRecording}
             toggleRecording={chatProps.toggleRecording}
             loading={chatProps.loading}
+          />
+
+          {/* ===== CHAT V2 MODAL (New Chat Feature) ===== */}
+          <ChatModalV2
+            isOpen={chatV2Open}
+            onClose={() => setChatV2Open(false)}
+            userId={"00000000-0000-0000-0000-000000000001"}
+            calendarId={calendarId || "00000000-0000-0000-0000-000000000001"}
           />
 
           {/* ===== EVENT MODAL ===== */}

@@ -17,6 +17,7 @@ from app.routers import (
     tasks_router,
     availability_router,
     chat_router,
+    chat_v2_router,
     settings_router,
 )
 
@@ -57,6 +58,7 @@ app.include_router(events_router)
 app.include_router(tasks_router)
 app.include_router(availability_router)
 app.include_router(chat_router)
+app.include_router(chat_v2_router)
 app.include_router(settings_router)
 
 

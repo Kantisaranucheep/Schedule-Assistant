@@ -12,10 +12,23 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class IntentType(str, Enum):
     """Supported intent types."""
 
+    # Original intent types
     CREATE_EVENT = "create_event"
     FIND_FREE_SLOTS = "find_free_slots"
     MOVE_EVENT = "move_event"
     DELETE_EVENT = "delete_event"
+
+    # Chat-specific intent types
+    ADD_EVENT_CHAT = "add_event_chat"
+    EDIT_EVENT_CHAT = "edit_event_chat"
+    REMOVE_EVENT_CHAT = "remove_event_chat"
+    UPDATE_DAILY_CHAT = "update_daily_chat"
+    RESPOND_AFFIRMATIVE = "respond_affirmative"
+    RESPOND_NEGATIVE = "respond_negative"
+    SELECT_PREFERENCE = "select_preference"
+    SELECT_OPTION = "select_option"
+    CONFIRM_CHANGES = "confirm_changes"
+
     UNKNOWN = "unknown"
 
 
@@ -110,6 +123,78 @@ class DeleteEventData(BaseModel):
 
 
 # ============================================================================
+# Chat-specific intent data models
+# ============================================================================
+
+
+class AddEventChatData(BaseModel):
+    """Data for add_event_chat intent (chat feature)."""
+
+    title: str = Field(..., description="Event title")
+    date: str = Field(..., description="Event date (YYYY-MM-DD or relative like 'tomorrow')")
+    start_time: str = Field(..., description="Start time (HH:MM)")
+    end_time: str = Field(..., description="End time (HH:MM)")
+    location: Optional[str] = Field(None, description="Event location")
+    description: Optional[str] = Field(None, description="Event description")
+
+
+class EditEventChatData(BaseModel):
+    """Data for edit_event_chat intent (chat feature)."""
+
+    event_id: Optional[str] = Field(None, description="Event UUID")
+    original_title: Optional[str] = Field(None, description="Original event title")
+    new_title: Optional[str] = Field(None, description="New title")
+    new_date: Optional[str] = Field(None, description="New date (YYYY-MM-DD)")
+    new_start_time: Optional[str] = Field(None, description="New start time (HH:MM)")
+    new_end_time: Optional[str] = Field(None, description="New end time (HH:MM)")
+
+
+class RemoveEventChatData(BaseModel):
+    """Data for remove_event_chat intent (chat feature)."""
+
+    event_id: Optional[str] = Field(None, description="Event UUID")
+    title: Optional[str] = Field(None, description="Event title")
+    date: Optional[str] = Field(None, description="Event date (YYYY-MM-DD)")
+
+
+class UpdateDailyChatData(BaseModel):
+    """Data for update_daily_chat intent (chat feature)."""
+
+    date_range: str = Field(..., description="Time range: 'today', 'this week', or 'this month'")
+    specific_date: Optional[str] = Field(None, description="Specific date if date_range is 'today' (YYYY-MM-DD)")
+
+
+class RespondAffirmativeData(BaseModel):
+    """Data for respond_affirmative intent (yes/help response)."""
+
+    response: str = Field(..., description="User's response text")
+
+
+class RespondNegativeData(BaseModel):
+    """Data for respond_negative intent (no/cancel response)."""
+
+    response: str = Field(..., description="User's response text")
+
+
+class SelectPreferenceData(BaseModel):
+    """Data for select_preference intent (choosing preference 1-4)."""
+
+    selected_preference: int = Field(..., ge=1, le=4, description="Selected preference (1-4)")
+
+
+class SelectOptionData(BaseModel):
+    """Data for select_option intent (choosing from options)."""
+
+    selected_option: int = Field(..., ge=1, description="Selected option number")
+
+
+class ConfirmChangesData(BaseModel):
+    """Data for confirm_changes intent (confirm or cancel)."""
+
+    confirmed: bool = Field(..., description="User confirmed (true) or cancelled (false)")
+
+
+# ============================================================================
 # Main Intent model
 # ============================================================================
 
@@ -128,7 +213,7 @@ class Intent(BaseModel):
     )
     raw_text: Optional[str] = Field(None, description="Original user text (debug)")
 
-    def get_typed_data(self) -> Union[CreateEventData, FindFreeSlotsData, MoveEventData, DeleteEventData, None]:
+    def get_typed_data(self) -> Union[CreateEventData, FindFreeSlotsData, MoveEventData, DeleteEventData, AddEventChatData, EditEventChatData, RemoveEventChatData, UpdateDailyChatData, RespondAffirmativeData, RespondNegativeData, SelectPreferenceData, SelectOptionData, ConfirmChangesData, None]:
         """Get data as the appropriate typed model."""
         if self.data is None:
             return None
@@ -138,6 +223,15 @@ class Intent(BaseModel):
             IntentType.FIND_FREE_SLOTS: FindFreeSlotsData,
             IntentType.MOVE_EVENT: MoveEventData,
             IntentType.DELETE_EVENT: DeleteEventData,
+            IntentType.ADD_EVENT_CHAT: AddEventChatData,
+            IntentType.EDIT_EVENT_CHAT: EditEventChatData,
+            IntentType.REMOVE_EVENT_CHAT: RemoveEventChatData,
+            IntentType.UPDATE_DAILY_CHAT: UpdateDailyChatData,
+            IntentType.RESPOND_AFFIRMATIVE: RespondAffirmativeData,
+            IntentType.RESPOND_NEGATIVE: RespondNegativeData,
+            IntentType.SELECT_PREFERENCE: SelectPreferenceData,
+            IntentType.SELECT_OPTION: SelectOptionData,
+            IntentType.CONFIRM_CHANGES: ConfirmChangesData,
         }
 
         model_class = type_map.get(IntentType(self.intent_type))
