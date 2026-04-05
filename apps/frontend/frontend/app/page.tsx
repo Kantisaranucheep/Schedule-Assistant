@@ -16,6 +16,7 @@ import {
   dayHeaderLabel,
   parseISODate,
 } from "./utils";
+import { deleteEvent, deleteTask } from "./services/events.api";
 
 import Sidebar from "./components/Sidebar";
 import MonthNavigation from "./components/MonthNavigation";
@@ -27,10 +28,31 @@ import ChatModal from "./components/Modals/ChatModal/ChatModal";
 import { useChatModal } from "./components/Modals/ChatModal/useChatModal";
 import EventModal from "./components/Modals/EventModal";
 import ViewEventModal from "./components/Modals/ViewEventModal";
+import { useEvents } from "./hooks/useEvents";
 
 export default function Home() {
-  // --- Categories State ---
-  const [categories, setCategories] = useState<EventCategory[]>([
+  // Events and categories from API
+  const { events: apiEvents, addEvent: apiAddEvent, loading, error, calendarId, categories: apiCategories, refetch } = useEvents();
+
+  // Local events overlay (for immediate UI updates before API sync)
+  const [localEvents, setLocalEvents] = useState<EventMap>({});
+  const [nextId, setNextId] = useState(100000); // Start high to avoid conflicts with API IDs
+
+  // Merge API events with local events
+  const events = useMemo(() => {
+    const merged: EventMap = { ...apiEvents };
+    Object.entries(localEvents).forEach(([dateKey, evts]) => {
+      if (!merged[dateKey]) {
+        merged[dateKey] = [];
+      }
+      merged[dateKey] = [...merged[dateKey], ...evts];
+      merged[dateKey].sort((a, b) => (a.startMin ?? 0) - (b.startMin ?? 0));
+    });
+    return merged;
+  }, [apiEvents, localEvents]);
+
+  // Local categories state (fallback if API categories not loaded yet)
+  const [localCategories, setLocalCategories] = useState<EventCategory[]>([
     { id: "cat-urgent", name: "Urgent / Important", color: "#ff3b30" },
     { id: "cat-work", name: "Work", color: "#ff9500" },
     { id: "cat-personal", name: "Personal", color: "#ffcc00" },
@@ -40,8 +62,11 @@ export default function Home() {
     { id: "cat-social", name: "Social / Fun", color: "#af52de" },
   ]);
 
+  // Use API categories if available, otherwise fallback to local
+  const categories = apiCategories.length > 0 ? apiCategories : localCategories;
+
   function handleAddCategory(cat: EventCategory) {
-    setCategories((prev) => [...prev, cat]);
+    setLocalCategories((prev) => [...prev, cat]);
   }
 
   // Month view default: current month
@@ -63,52 +88,6 @@ export default function Home() {
   const [eventModalOpen, setEventModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<{ event: Ev; dateKey: string } | null>(null);
   const [viewingEvent, setViewingEvent] = useState<{ event: Ev; dateKey: string } | null>(null);
-
-  // Events store
-  const [events, setEvents] = useState<EventMap>({
-    "2026-02-02": [
-      {
-        id: 1,
-        kind: "event",
-        allDay: false,
-        startMin: 600,
-        endMin: 630,
-        title: "Training",
-        color: "#34c759",
-        categoryId: "cat-health",
-        location: "Gym",
-        notes: "",
-      },
-      {
-        id: 2,
-        kind: "event",
-        allDay: false,
-        startMin: 660,
-        endMin: 720,
-        title: "Transfer window opens",
-        color: "#ff3b30",
-        categoryId: "cat-urgent",
-        location: "Office",
-        notes: "",
-      },
-    ],
-    "2026-02-03": [
-      {
-        id: 3,
-        kind: "task",
-        allDay: false,
-        startMin: 540,
-        endMin: 600,
-        title: "First Division",
-        color: "#007aff",
-        categoryId: "cat-meetings",
-        location: "Library",
-        notes: "",
-      },
-    ],
-  });
-
-  const [nextId, setNextId] = useState(100);
 
   // ===== Filters =====
   const [filters, setFilters] = useState<FilterCriteria>({
@@ -256,9 +235,19 @@ export default function Home() {
     return out;
   }, [filteredEvents, viewYear, viewMonth, TODAY]);
 
-  function onSaveEvent(newItem: Ev, date: string) {
-    let targetDates: string[] = [date];
+  async function onSaveEvent(newItem: Ev, date: string) {
+    const realTodayKey = keyOf(new Date());
+    const isTodaySelected = date === realTodayKey;
 
+    // Convert time from minutes to HH:MM format
+    const startMinToTime = (mins: number) => {
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    };
+
+    // For recurring events, create multiple events
+    let targetDates: string[] = [date];
     if (!editingEvent && newItem.isRecurring && newItem.recurEndDate && newItem.recurDays && newItem.recurDays.length > 0) {
       targetDates = [];
       let current = date;
@@ -276,54 +265,60 @@ export default function Home() {
       if (targetDates.length === 0) targetDates = [date];
     }
 
-    if (editingEvent) {
-      setEvents((prev) => {
-        const next: EventMap = { ...prev };
-        const oldDate = editingEvent.dateKey;
+    // Create event via API for each target date
+    for (const targetDate of targetDates) {
+      const result = await apiAddEvent(
+        newItem.kind,
+        newItem.title,
+        targetDate,
+        startMinToTime(newItem.startMin ?? 0),
+        startMinToTime(newItem.endMin ?? 0),
+        newItem.allDay,
+        newItem.categoryId || "",
+        newItem.location || "",
+        newItem.notes || "",
+        realTodayKey,
+        targetDate === realTodayKey
+      );
 
-        // Remove from old date
-        if (next[oldDate]) {
-          next[oldDate] = next[oldDate].filter(e => e.id !== editingEvent.event.id);
-          if (next[oldDate].length === 0) delete next[oldDate];
-        }
-        // Add to new date
-        const arr = next[date] ? [...next[date]] : [];
-        const updated = { ...newItem, id: editingEvent.event.id };
-        arr.push(updated);
-        arr.sort((a, b) => (a.startMin ?? 0) - (b.startMin ?? 0));
-        next[date] = arr;
-        return next;
-      });
-    } else {
-      let allocatedIds = targetDates.length;
-      let startId = nextId;
-      setNextId((x) => x + allocatedIds);
-
-      setEvents((prev) => {
-        const next: EventMap = { ...prev };
-        targetDates.forEach((d, idx) => {
-          const eventWithId = { ...newItem, id: startId + idx };
-          const arr = next[d] ? [...next[d]] : [];
-          arr.push(eventWithId);
-          arr.sort((a, b) => (a.startMin ?? 0) - (b.startMin ?? 0));
-          next[d] = arr;
-        });
-        return next;
-      });
+      if (!result.success) {
+        console.error("Failed to save event:", result.error);
+        alert(result.error || "Failed to save event");
+        return;
+      }
     }
 
     setEventModalOpen(false);
     setEditingEvent(null);
   }
 
-  function onDeleteEvent(dateKey: string, eventId: number) {
-    setEvents((prev) => {
-      const next: EventMap = { ...prev };
-      if (!next[dateKey]) return next;
-      next[dateKey] = next[dateKey].filter(e => e.id !== eventId);
-      if (next[dateKey].length === 0) delete next[dateKey];
-      return next;
-    });
+  async function onDeleteEvent(dateKey: string, eventId: number | string) {
+    // Only delete from API if it's a UUID (API-created event)
+    if (typeof eventId === "string" && eventId.includes("-")) {
+      try {
+        // Find the event to determine if it's a task or event
+        const event = apiEvents[dateKey]?.find(e => e.id === eventId);
+        if (event?.kind === "task") {
+          await deleteTask(eventId);
+        } else {
+          await deleteEvent(eventId);
+        }
+        // Refresh events from API
+        await refetch();
+      } catch (err) {
+        console.error("Failed to delete:", err);
+        alert("Failed to delete event");
+      }
+    } else {
+      // Local-only event, just remove from local state
+      setLocalEvents((prev) => {
+        const next: EventMap = { ...prev };
+        if (!next[dateKey]) return next;
+        next[dateKey] = next[dateKey].filter(e => e.id !== eventId);
+        if (next[dateKey].length === 0) delete next[dateKey];
+        return next;
+      });
+    }
   }
 
   function onEditClick(dateKey: string, ev: Ev) {
@@ -366,6 +361,17 @@ export default function Home() {
 
         {/* MAIN */}
         <main className="flex-grow-1 d-flex flex-column bg-white text-dark overflow-hidden">
+          {/* Loading/Error State */}
+          {loading && (
+            <div className="position-absolute top-0 end-0 m-3 p-2 bg-info text-white rounded shadow" style={{ zIndex: 1000 }}>
+              Loading events...
+            </div>
+          )}
+          {error && (
+            <div className="position-absolute top-0 end-0 m-3 p-3 bg-danger text-white rounded shadow" style={{ zIndex: 1000 }}>
+              Error: {error}
+            </div>
+          )}
           {/* SHARED HEADER */}
           <div className="d-flex align-items-center justify-content-between px-3 border-bottom border-light-subtle bg-white" style={{ minHeight: 60 }}>
             {/* Left: Navigation */}

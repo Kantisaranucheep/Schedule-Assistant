@@ -7,7 +7,7 @@ interface ViewEventModalProps {
     onClose: () => void;
     eventData: { event: Ev; dateKey: string } | null;
     onEdit: (dateKey: string, ev: Ev) => void;
-    onDelete: (dateKey: string, eventId: number) => void;
+    onDelete: (dateKey: string, eventId: string | number) => void;
 }
 
 export default function ViewEventModal({
@@ -26,6 +26,8 @@ export default function ViewEventModal({
     const timeString = useMemo(() => {
         if (!eventData) return "";
         const { event } = eventData;
+        // Tasks don't have time, only show date
+        if (event.kind === "task") return "";
         if (event.allDay) return "All day";
         return `${minutesToLabel(event.startMin)} – ${minutesToLabel(event.endMin)}`;
     }, [eventData]);
@@ -74,7 +76,7 @@ export default function ViewEventModal({
                         className="btn btn-sm text-secondary hover-text-danger border-0 p-2 lh-1"
                         onClick={() => {
                             onClose();
-                            onDelete(dateKey, event.id as number);
+                            onDelete(dateKey, event.id);
                         }}
                         title="Delete event"
                     >
@@ -103,9 +105,14 @@ export default function ViewEventModal({
                             style={{ width: 16, height: 16, background: event.color }}
                         />
                         <div>
-                            <h4 className="fw-bold mb-1">{event.title}</h4>
+                            <div className="d-flex align-items-center gap-2 mb-1">
+                                <h4 className="fw-bold mb-0">{event.title}</h4>
+                                {event.kind === "task" && (
+                                    <span className="badge bg-secondary bg-opacity-25 text-dark small">Task</span>
+                                )}
+                            </div>
                             <div className="text-secondary small d-flex flex-column gap-1">
-                                <div>{prettyDate} &bull; {timeString}</div>
+                                <div>{prettyDate}{timeString && ` • ${timeString}`}</div>
                             </div>
                         </div>
                     </div>

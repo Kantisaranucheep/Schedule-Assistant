@@ -50,8 +50,89 @@ export default function DayView({
     selectedDay,
     onViewEvent,
 }: DayViewProps) {
+    // Separate tasks from timed events
+    const tasks = dayEvents.filter(e => e.kind === "task");
+    const timedEvents = dayEvents.filter(e => e.kind === "event" && !e.allDay && (e.endMin ?? 0) - (e.startMin ?? 0) < 720);
+    const allDayEvents = dayEvents.filter(e => e.kind === "event" && e.allDay);
+
     return (
         <section className="flex-grow-1 d-flex flex-column overflow-hidden bg-white shadow-sm">
+            {/* Tasks Section - shown at top if there are tasks */}
+            {tasks.length > 0 && (
+                <div className="border-bottom bg-light bg-opacity-25 p-3">
+                    <div className="d-flex align-items-center gap-2 mb-2">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16" className="text-secondary">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                        </svg>
+                        <span className="small fw-bold text-secondary text-uppercase" style={{ letterSpacing: "1px", fontSize: 11 }}>
+                            Tasks
+                        </span>
+                    </div>
+                    <div className="d-flex flex-wrap gap-2">
+                        {tasks.map(task => (
+                            <div
+                                key={task.id}
+                                className="d-flex align-items-center gap-2 px-3 py-2 rounded-3 border shadow-sm bg-white hover-lift transition-all"
+                                style={{
+                                    borderLeft: `4px solid ${task.color}`,
+                                    cursor: "pointer",
+                                }}
+                                onClick={() => onViewEvent(selectedDay, task)}
+                                role="button"
+                                tabIndex={0}
+                            >
+                                <span className="fw-semibold small text-dark">{task.title}</span>
+                                {task.location && (
+                                    <span className="text-muted small" style={{ fontSize: 11 }}>
+                                        • {task.location}
+                                    </span>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* All Day Events Section */}
+            {allDayEvents.length > 0 && (
+                <div className="border-bottom bg-light bg-opacity-25 p-3">
+                    <div className="d-flex align-items-center gap-2 mb-2">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16" className="text-secondary">
+                            <circle cx="12" cy="12" r="9"></circle>
+                            <path d="M12 7v6l4 2"></path>
+                        </svg>
+                        <span className="small fw-bold text-secondary text-uppercase" style={{ letterSpacing: "1px", fontSize: 11 }}>
+                            All Day
+                        </span>
+                    </div>
+                    <div className="d-flex flex-wrap gap-2">
+                        {allDayEvents.map(event => (
+                            <div
+                                key={event.id}
+                                className="d-flex align-items-center gap-2 px-3 py-2 rounded-3 border shadow-sm bg-white hover-lift transition-all"
+                                style={{
+                                    borderLeft: `4px solid ${event.color}`,
+                                    cursor: "pointer",
+                                }}
+                                onClick={() => onViewEvent(selectedDay, event)}
+                                role="button"
+                                tabIndex={0}
+                            >
+                                <span className="fw-semibold small text-dark">{event.title}</span>
+                                {event.location && (
+                                    <span className="text-muted small" style={{ fontSize: 11 }}>
+                                        • {event.location}
+                                    </span>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Minute Header */}
             <div
                 className="d-flex border-bottom bg-light bg-opacity-50"
@@ -85,9 +166,6 @@ export default function DayView({
 
             <div className="d-flex flex-column flex-grow-1 overflow-auto custom-scrollbar">
                 {HOURS.map((h) => {
-                    const timedEvents = dayEvents.filter(
-                        (e) => !e.allDay && (e.endMin ?? 0) - (e.startMin ?? 0) < 720
-                    );
                     const allPortions = timedEvents.flatMap(splitEventByHours);
                     const rowPortions = allPortions.filter((p) => p.hour === h);
 

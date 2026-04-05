@@ -12,6 +12,7 @@ from .base import BaseModel
 
 if TYPE_CHECKING:
     from .calendar import Calendar
+    from .category import Category
 
 
 class Event(BaseModel):
@@ -28,8 +29,11 @@ class Event(BaseModel):
     all_day: Mapped[bool] = mapped_column(Boolean, default=False)
     location: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    color: Mapped[str] = mapped_column(String(7), default="#3B82F6")
+    category_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
+    )
     status: Mapped[str] = mapped_column(String(20), default="confirmed")  # confirmed, cancelled, tentative
 
     # Relationships
     calendar: Mapped["Calendar"] = relationship("Calendar", back_populates="events")
+    category: Mapped[Optional["Category"]] = relationship("Category", back_populates="events")

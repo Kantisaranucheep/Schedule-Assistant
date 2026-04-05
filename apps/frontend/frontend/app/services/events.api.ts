@@ -5,6 +5,15 @@
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+export interface CategoryResponse {
+  id: string;
+  calendar_id: string;
+  name: string;
+  color: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface EventResponse {
   id: string;
   calendar_id: string;
@@ -14,7 +23,20 @@ export interface EventResponse {
   all_day: boolean;
   location: string | null;
   notes: string | null;
-  color: string;
+  category_id: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskResponse {
+  id: string;
+  calendar_id: string;
+  title: string;
+  date: string; // YYYY-MM-DD format
+  category_id: string | null;
+  location: string | null;
+  notes: string | null;
   status: string;
   created_at: string;
   updated_at: string;
@@ -28,8 +50,17 @@ export interface EventCreateRequest {
   all_day?: boolean;
   location?: string;
   notes?: string;
-  color?: string;
+  category_id?: string;
   timezone?: string; // IANA timezone e.g. "Asia/Bangkok"
+}
+
+export interface TaskCreateRequest {
+  calendar_id: string;
+  title: string;
+  date: string; // YYYY-MM-DD format
+  category_id?: string;
+  location?: string;
+  notes?: string;
 }
 
 /**
@@ -123,6 +154,86 @@ export async function deleteEvent(eventId: string, soft: boolean = true): Promis
   
   if (!res.ok) {
     throw new Error(`Failed to delete event: ${res.statusText}`);
+  }
+}
+
+/**
+ * Fetch categories for a calendar
+ */
+export async function fetchCategories(calendarId: string): Promise<CategoryResponse[]> {
+  const params = new URLSearchParams({ calendar_id: calendarId });
+  
+  const res = await fetch(`${API_BASE}/categories?${params}`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch categories: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+/**
+ * Create default categories for a calendar
+ */
+export async function createDefaultCategories(calendarId: string): Promise<CategoryResponse[]> {
+  const params = new URLSearchParams({ calendar_id: calendarId });
+  
+  const res = await fetch(`${API_BASE}/categories/defaults?${params}`, {
+    method: "POST",
+  });
+  
+  if (!res.ok) {
+    throw new Error(`Failed to create default categories: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+/**
+ * Fetch tasks for a calendar within optional date range
+ */
+export async function fetchTasks(
+  calendarId: string,
+  startDate?: Date,
+  endDate?: Date
+): Promise<TaskResponse[]> {
+  const params = new URLSearchParams({ calendar_id: calendarId });
+  if (startDate) params.append("start_date", startDate.toISOString().split('T')[0]);
+  if (endDate) params.append("end_date", endDate.toISOString().split('T')[0]);
+
+  const res = await fetch(`${API_BASE}/tasks?${params}`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch tasks: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+/**
+ * Create a new task
+ */
+export async function createTask(task: TaskCreateRequest): Promise<TaskResponse> {
+  const res = await fetch(`${API_BASE}/tasks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(task),
+  });
+  
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(error.detail?.message || error.detail || "Failed to create task");
+  }
+  return res.json();
+}
+
+/**
+ * Delete a task
+ */
+export async function deleteTask(taskId: string, soft: boolean = true): Promise<void> {
+  const params = new URLSearchParams({ soft: String(soft) });
+  
+  const res = await fetch(`${API_BASE}/tasks/${taskId}?${params}`, {
+    method: "DELETE",
+  });
+  
+  if (!res.ok) {
+    throw new Error(`Failed to delete task: ${res.statusText}`);
   }
 }
 

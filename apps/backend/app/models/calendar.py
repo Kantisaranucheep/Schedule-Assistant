@@ -12,6 +12,8 @@ from .base import BaseModel
 if TYPE_CHECKING:
     from .user import User
     from .event import Event
+    from .task import Task
+    from .category import Category
 
 
 class Calendar(BaseModel):
@@ -30,6 +32,12 @@ class Calendar(BaseModel):
     user: Mapped["User"] = relationship("User", back_populates="calendars")
     events: Mapped[List["Event"]] = relationship(
         "Event", back_populates="calendar", cascade="all, delete-orphan"
+    )
+    tasks: Mapped[List["Task"]] = relationship(
+        "Task", back_populates="calendar", cascade="all, delete-orphan"
+    )
+    categories: Mapped[List["Category"]] = relationship(
+        "Category", back_populates="calendar", cascade="all, delete-orphan"
     )
 
 
