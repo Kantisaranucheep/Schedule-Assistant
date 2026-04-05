@@ -184,18 +184,21 @@ async def send_message(
 
         # Update session state
         new_state = result.get("state", current_state)
-        state_manager.update_state(session_uuid, ConversationStateEnum(new_state))
+        state_manager.update_state(session_uuid, ConversationStateEnum(new_state) if isinstance(new_state, str) else new_state)
 
-        new_state_value = new_state.value if hasattr(new_state, 'value') else str(new_state)
-        response = ChatV2Response(
-            reply=result.get("text", ""),
-            state=new_state_value,
-            buttons=result.get("buttons"),
-            table=result.get("table"),
-            error=result.get("error"),
-        )
+        # Extract state value
+        state_value = new_state.value if hasattr(new_state, 'value') else str(new_state)
 
-        return response.dict()
+        # Build response dict directly
+        response_dict = {
+            "reply": result.get("text", ""),
+            "state": state_value,
+            "buttons": result.get("buttons"),
+            "table": result.get("table"),
+            "error": result.get("error"),
+        }
+
+        return response_dict
 
     except HTTPException:
         raise
