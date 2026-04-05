@@ -32,7 +32,7 @@ import { useEvents } from "./hooks/useEvents";
 
 export default function Home() {
   // Events and categories from API
-  const { events: apiEvents, addEvent: apiAddEvent, loading, error, calendarId, categories: apiCategories, refetch } = useEvents();
+  const { events: apiEvents, addEvent: apiAddEvent, editEvent: apiEditEvent, loading, error, calendarId, categories: apiCategories, refetch } = useEvents();
 
   // Local events overlay (for immediate UI updates before API sync)
   const [localEvents, setLocalEvents] = useState<EventMap>({});
@@ -245,6 +245,37 @@ export default function Home() {
       const m = mins % 60;
       return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     };
+
+    // If editing an existing API event (has UUID), use update
+    if (editingEvent && typeof editingEvent.event.id === "string" && editingEvent.event.id.includes("-")) {
+      // Use the ORIGINAL event's kind to determine which API to call
+      const originalKind = editingEvent.event.kind;
+      
+      const result = await apiEditEvent(
+        editingEvent.event.id,
+        editingEvent.dateKey,
+        originalKind,
+        newItem.title,
+        date,
+        startMinToTime(newItem.startMin ?? 0),
+        startMinToTime(newItem.endMin ?? 0),
+        newItem.allDay,
+        newItem.categoryId || "",
+        newItem.location || "",
+        newItem.notes || "",
+        realTodayKey,
+        isTodaySelected
+      );
+
+      if (!result.success) {
+        alert(result.error || "Failed to update");
+        return;
+      }
+
+      setEventModalOpen(false);
+      setEditingEvent(null);
+      return;
+    }
 
     // For recurring events, create multiple events
     let targetDates: string[] = [date];

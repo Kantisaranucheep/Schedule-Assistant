@@ -47,6 +47,9 @@ export default function EventModal({
     const [newCatName, setNewCatName] = useState("");
     const [newCatColor, setNewCatColor] = useState("#007aff");
 
+    const [showUpdateConfirm, setShowUpdateConfirm] = useState(false);
+    const [pendingEvent, setPendingEvent] = useState<{ item: Ev, date: string } | null>(null);
+
     const [mIsRecurring, setMIsRecurring] = useState(false);
     const [mRecurEndDate, setMRecurEndDate] = useState<string>(realTodayKey);
     const [mRecurDays, setMRecurDays] = useState<number[]>([]);
@@ -158,6 +161,29 @@ export default function EventModal({
 
     const canSave = mTitle.trim() !== "" && !conflict && !isDurationTooShort && !isPastTime && !isInvalidTime;
 
+    function buildNewItem(): Ev {
+        const title = mTitle.trim();
+        const selectedCat = categories.find(c => c.id === mCategoryId);
+
+        return {
+            id: Date.now(),
+            kind: modalKind,
+            allDay: modalKind === "task" ? true : mAllDay,
+            startMin: modalKind === "task" ? 0 : startMinVal,
+            endMin: modalKind === "task" ? 0 : endMinVal,
+            title,
+            categoryId: mCategoryId,
+            color: selectedCat ? selectedCat.color : (editingEvent ? editingEvent.event.color : RAINBOW[1]),
+            location: mLocation.trim(),
+            notes: mNotes.trim(),
+            ...(modalKind === "event" && mIsRecurring ? {
+                isRecurring: true,
+                recurEndDate: mRecurEndDate,
+                recurDays: mRecurDays,
+            } : {})
+        };
+    }
+
     function saveEvent(e: React.FormEvent) {
         e.preventDefault();
         const title = mTitle.trim();
@@ -205,28 +231,29 @@ export default function EventModal({
             }
         }
 
-        const selectedCat = categories.find(c => c.id === mCategoryId);
+        const newItem = buildNewItem();
 
-        const newItem: Ev = {
-            id: Date.now(),
-            kind: modalKind,
-            allDay: modalKind === "task" ? true : mAllDay, // Tasks are always "all day"
-            startMin: modalKind === "task" ? 0 : startMinVal,
-            endMin: modalKind === "task" ? 0 : endMinVal,
-            title,
-            categoryId: mCategoryId,
-            color: selectedCat ? selectedCat.color : (editingEvent ? editingEvent.event.color : RAINBOW[1]),
-            location: mLocation.trim(),
-            notes: mNotes.trim(),
-            ...(modalKind === "event" && mIsRecurring ? {
-                isRecurring: true,
-                recurEndDate: mRecurEndDate,
-                recurDays: mRecurDays,
-            } : {})
-        };
-
-        onSave(newItem, mDate);
+        // If editing, show confirmation popup
+        if (editingEvent) {
+            setPendingEvent({ item: newItem, date: mDate });
+            setShowUpdateConfirm(true);
+        } else {
+            onSave(newItem, mDate);
+        }
     }
+
+    const handleConfirmUpdate = () => {
+        if (pendingEvent) {
+            onSave(pendingEvent.item, pendingEvent.date);
+        }
+        setShowUpdateConfirm(false);
+        setPendingEvent(null);
+    };
+
+    const handleCancelUpdate = () => {
+        setShowUpdateConfirm(false);
+        setPendingEvent(null);
+    };
 
     const prettyDate = useMemo(() => {
         const dt = parseISODate(mDate);
@@ -246,12 +273,60 @@ export default function EventModal({
             }}
             aria-hidden={!isOpen}
             onClick={(e) => {
-                if (e.target === e.currentTarget) onClose();
+                if (e.target === e.currentTarget) {
+                    if (showUpdateConfirm) {
+                        setShowUpdateConfirm(false);
+                        setPendingEvent(null);
+                    } else {
+                        onClose();
+                    }
+                }
             }}
         >
+            {/* Update Confirmation Modal */}
+            {showUpdateConfirm ? (
+                <div
+                    className="bg-white rounded-4 shadow-lg overflow-hidden position-relative"
+                    style={{ width: "min(360px, 92vw)" }}
+                >
+                    <div className="p-4 text-center">
+                        <div className="mb-3">
+                            <div
+                                className="d-inline-flex align-items-center justify-content-center rounded-circle bg-primary bg-opacity-10"
+                                style={{ width: 56, height: 56 }}
+                            >
+                                <svg viewBox="0 0 24 24" width="28" height="28" stroke="#0d6efd" strokeWidth="2" fill="none">
+                                    <path d="M12 20h9"></path>
+                                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                                </svg>
+                            </div>
+                        </div>
+                        <h5 className="fw-bold mb-2">Update {modalKind === "task" ? "Task" : "Event"}?</h5>
+                        <p className="text-secondary small mb-4">
+                            Are you sure you want to update &quot;{mTitle.trim()}&quot;?
+                        </p>
+                        <div className="d-flex gap-2 justify-content-center">
+                            <button
+                                type="button"
+                                className="btn btn-light rounded-pill px-4 fw-semibold"
+                                onClick={handleCancelUpdate}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                className="btn btn-primary rounded-pill px-4 fw-semibold"
+                                onClick={handleConfirmUpdate}
+                            >
+                                Update
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : (
             <div
-                className="bg-white rounded-4 shadow-lg border border-light-subtle overflow-hidden position-relative"
-                style={{ width: "min(720px, 92vw)" }}
+                className="bg-white rounded-4 shadow-lg border border-light-subtle overflow-hidden position-relative d-flex flex-column"
+                style={{ width: "min(720px, 92vw)", maxHeight: "90vh" }}
             >
                 <button
                     type="button"
@@ -276,9 +351,10 @@ export default function EventModal({
                             className={`btn btn-sm fw-bold rounded-pill px-4 ${modalKind === "event"
                                 ? "btn-white shadow-sm text-dark"
                                 : "btn-light text-secondary border-0"
-                                }`}
-                            onClick={() => setModalKind("event")}
+                                } ${editingEvent ? "pe-none opacity-75" : ""}`}
+                            onClick={() => !editingEvent && setModalKind("event")}
                             role="button"
+                            title={editingEvent ? "Cannot change type when editing" : undefined}
                         >
                             Event
                         </div>
@@ -286,16 +362,17 @@ export default function EventModal({
                             className={`btn btn-sm fw-bold rounded-pill px-4 ${modalKind === "task"
                                 ? "btn-white shadow-sm text-dark"
                                 : "btn-light text-secondary border-0"
-                                }`}
-                            onClick={() => setModalKind("task")}
+                                } ${editingEvent ? "pe-none opacity-75" : ""}`}
+                            onClick={() => !editingEvent && setModalKind("task")}
                             role="button"
+                            title={editingEvent ? "Cannot change type when editing" : undefined}
                         >
                             Task
                         </div>
                     </div>
                 </div>
 
-                <div className="p-4 bg-white/50">
+                <div className="p-4 bg-white/50 overflow-y-auto flex-grow-1" style={{ maxHeight: "calc(90vh - 130px)" }}>
                     <form onSubmit={saveEvent} className="d-flex flex-column gap-3">
                         <div className="d-flex gap-3">
                             <div
@@ -544,10 +621,10 @@ export default function EventModal({
                                     <path d="M12 12l8-4"></path>
                                 </svg>
                             </div>
-                            <div className="flex-grow-1 p-3 rounded-4 bg-light border">
-                                <div className="d-flex align-items-center gap-3 flex-wrap w-100">
+                            <div className="flex-grow-1 p-2 rounded-4 bg-light border">
+                                <div className="d-flex flex-column gap-2 px-2 py-1">
                                     <span className="small fw-bold text-secondary">Category</span>
-                                    <div className="d-flex gap-2 flex-wrap align-items-center w-100">
+                                    <div className="d-flex gap-2 flex-wrap align-items-center">
                                         {categories.map((c) => (
                                             <button
                                                 key={c.id}
@@ -638,12 +715,13 @@ export default function EventModal({
                                 type="submit"
                                 disabled={!canSave}
                             >
-                                Save
+                                {editingEvent ? "Update" : "Save"}
                             </button>
                         </div>
                     </form>
                 </div>
             </div>
+            )}
         </div>
     );
 }

@@ -63,6 +63,26 @@ export interface TaskCreateRequest {
   notes?: string;
 }
 
+export interface TaskUpdateRequest {
+  title?: string;
+  date?: string;
+  category_id?: string;
+  location?: string;
+  notes?: string;
+  status?: string;
+}
+
+export interface EventUpdateRequest {
+  title?: string;
+  start_time?: string;
+  end_time?: string;
+  all_day?: boolean;
+  location?: string;
+  notes?: string;
+  category_id?: string;
+  timezone?: string;
+}
+
 /**
  * Get the user's timezone from the browser
  */
@@ -158,6 +178,26 @@ export async function deleteEvent(eventId: string, soft: boolean = true): Promis
 }
 
 /**
+ * Update an event
+ */
+export async function updateEvent(
+  eventId: string,
+  event: EventUpdateRequest
+): Promise<EventResponse> {
+  const res = await fetch(`${API_BASE}/events/${eventId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(event),
+  });
+  
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(error.detail?.message || error.detail || "Failed to update event");
+  }
+  return res.json();
+}
+
+/**
  * Fetch categories for a calendar
  */
 export async function fetchCategories(calendarId: string): Promise<CategoryResponse[]> {
@@ -235,6 +275,40 @@ export async function deleteTask(taskId: string, soft: boolean = true): Promise<
   if (!res.ok) {
     throw new Error(`Failed to delete task: ${res.statusText}`);
   }
+}
+
+/**
+ * Update a task
+ */
+export async function updateTask(
+  taskId: string,
+  task: TaskUpdateRequest
+): Promise<TaskResponse> {
+  const res = await fetch(`${API_BASE}/tasks/${taskId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(task),
+  });
+  
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(error.detail?.message || error.detail || "Failed to update task");
+  }
+  return res.json();
+}
+
+/**
+ * Mark a task as completed
+ */
+export async function completeTask(taskId: string): Promise<TaskResponse> {
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/complete`, {
+    method: "POST",
+  });
+  
+  if (!res.ok) {
+    throw new Error(`Failed to complete task: ${res.statusText}`);
+  }
+  return res.json();
 }
 
 /**

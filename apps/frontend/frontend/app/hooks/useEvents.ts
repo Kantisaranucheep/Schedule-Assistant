@@ -10,10 +10,14 @@ import {
   createDefaultCategories,
   createEvent, 
   createTask,
+  updateEvent,
+  updateTask,
   fetchCalendars, 
   createCalendar,
   EventCreateRequest,
   TaskCreateRequest,
+  EventUpdateRequest,
+  TaskUpdateRequest,
   CategoryResponse,
   getUserTimezone,
   toLocalISOString
@@ -249,6 +253,115 @@ export function useEvents() {
     return { success: true };
   }
 
+  // Update an event or task
+  async function editEvent(
+    eventId: string,
+    originalDateKey: string,
+    modalKind: Kind,
+    mTitle: string,
+    mDate: string,
+    mStart: string,
+    mEnd: string,
+    mAllDay: boolean,
+    mCategoryId: string,
+    mLocation: string,
+    mNotes: string,
+    realTodayKey: string,
+    isTodaySelected: boolean
+  ): Promise<{ success: boolean; error?: string }> {
+    const title = mTitle.trim();
+    if (!title) return { success: false, error: "Title is required" };
+
+    if (mDate < realTodayKey) {
+      return { success: false, error: "You cannot choose a past date." };
+    }
+
+    // Only update via API if it's a UUID (API-created event)
+    if (!eventId.includes("-")) {
+      return { success: false, error: "Cannot update local-only events" };
+    }
+
+    try {
+      if (modalKind === "task") {
+        // Update task
+        const taskUpdate: TaskUpdateRequest = {
+          title,
+          date: mDate,
+          category_id: mCategoryId || undefined,
+          location: mLocation.trim() || undefined,
+          notes: mNotes.trim() || undefined,
+        };
+
+        await updateTask(eventId, taskUpdate);
+        
+        // Reload events to get updated data
+        await loadEvents();
+        
+        return { success: true };
+      } else {
+        // Update event
+        let startMinVal = 0;
+        let endMinVal = 0;
+
+        if (!mAllDay) {
+          if (isTodaySelected) {
+            const ms = roundUpTimeHHMM(nowTimeHHMM(), 5);
+            if (mStart < ms) {
+              return { success: false, error: "Start time cannot be in the past." };
+            }
+          }
+          startMinVal = timeToMinutes(mStart);
+          endMinVal = timeToMinutes(mEnd);
+
+          if (endMinVal < startMinVal) {
+            return { success: false, error: "End time cannot be earlier than start time." };
+          }
+
+          if (endMinVal - startMinVal < 5) {
+            return { success: false, error: "Event duration must be at least 5 minutes." };
+          }
+        }
+
+        // Convert date and time to ISO datetime strings
+        const [year, month, day] = mDate.split("-").map(Number);
+        const startHour = Math.floor(startMinVal / 60);
+        const startMin = startMinVal % 60;
+        const endHour = Math.floor(endMinVal / 60);
+        const endMin = endMinVal % 60;
+
+        const startTime = new Date(year, month - 1, day, startHour, startMin);
+        const endTime = new Date(year, month - 1, day, endHour, endMin);
+
+        // For all-day events, set times to start/end of day
+        if (mAllDay) {
+          startTime.setHours(0, 0, 0, 0);
+          endTime.setHours(23, 59, 59, 999);
+        }
+
+        const eventUpdate: EventUpdateRequest = {
+          title,
+          start_time: toLocalISOString(startTime),
+          end_time: toLocalISOString(endTime),
+          all_day: mAllDay,
+          location: mLocation.trim() || undefined,
+          notes: mNotes.trim() || undefined,
+          category_id: mCategoryId || undefined,
+          timezone: getUserTimezone(),
+        };
+
+        await updateEvent(eventId, eventUpdate);
+        
+        // Reload events to get updated data
+        await loadEvents();
+        
+        return { success: true };
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to update";
+      return { success: false, error: message };
+    }
+  }
+
   // Convert CategoryResponse to EventCategory for frontend
   const frontendCategories: EventCategory[] = categories.map(c => ({
     id: c.id,
@@ -263,7 +376,8 @@ export function useEvents() {
 
   return { 
     events, 
-    addEvent, 
+    addEvent,
+    editEvent,
     loading, 
     error, 
     calendarId,
