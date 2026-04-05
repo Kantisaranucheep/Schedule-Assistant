@@ -76,21 +76,30 @@ export default function MonthGrid({ cells, onSelectDay, setViewMode, onViewEvent
                 }}
             >
                 {cells.map((c, idx) => {
-                    const shown = c.dayEvents.slice(0, 3);
-                    const moreCount = Math.max(0, c.dayEvents.length - shown.length);
+                    // Sort events by time: all-day/tasks first, then by startMin
+                    const sortedEvents = [...c.dayEvents].sort((a, b) => {
+                        // Tasks and all-day events come first
+                        const aIsAllDay = a.allDay || a.kind === "task";
+                        const bIsAllDay = b.allDay || b.kind === "task";
+                        if (aIsAllDay && !bIsAllDay) return -1;
+                        if (!aIsAllDay && bIsAllDay) return 1;
+                        // Then sort by start time
+                        return (a.startMin ?? 0) - (b.startMin ?? 0);
+                    });
+                    const shown = sortedEvents.slice(0, 3);
+                    const moreCount = Math.max(0, sortedEvents.length - shown.length);
 
                     return (
                         <div
                             key={`${c.key}-${idx}`}
                             className={[
-                                "p-2 border-end border-bottom position-relative overflow-hidden",
+                                "p-1 border-end border-bottom position-relative overflow-hidden d-flex flex-column",
                                 c.muted ? "bg-light text-muted" : "bg-white",
                                 c.isToday ? "bg-primary bg-opacity-10 shadow-inset" : "",
                             ].join(" ")}
                             style={{
-                                minHeight: 80,
                                 cursor: "pointer",
-                                borderTop: c.isToday ? "3px solid var(--bs-primary)" : undefined
+                                boxShadow: c.isToday ? "inset 0 3px 0 0 var(--bs-primary)" : undefined
                             }}
                             onClick={() => {
                                 onSelectDay(c.key);
@@ -106,22 +115,23 @@ export default function MonthGrid({ cells, onSelectDay, setViewMode, onViewEvent
                             }}
                         >
                             <div
-                                className={`p-2 fw-bold small ${c.muted ? "text-secondary opacity-50" : "text-dark"
+                                className={`px-1 fw-bold small flex-shrink-0 ${c.muted ? "text-secondary opacity-50" : "text-dark"
                                     }`}
+                                style={{ fontSize: 12, paddingTop: c.isToday ? 2 : 0 }}
                             >
                                 {c.date.getDate()}
                             </div>
 
-                            <div className="d-flex flex-column gap-1 mt-1">
+                            <div className="d-flex flex-column flex-grow-1 justify-content-start" style={{ gap: 2 }}>
                                 {shown.map((ev) => (
                                     <div
                                         key={ev.id}
-                                        className="d-flex align-items-center gap-1 px-2 py-1 rounded-3 border overflow-hidden shadow-sm hover-overlay"
+                                        className="d-flex align-items-center px-1 rounded-2 overflow-hidden"
                                         style={{
                                             borderLeft: `3px solid ${ev.color}`,
                                             backgroundColor: `color-mix(in srgb, ${ev.color} 15%, #ffffff)`,
-                                            borderColor: `color-mix(in srgb, ${ev.color} 30%, #dee2e6)`,
                                             cursor: "pointer",
+                                            height: 25,
                                         }}
                                         onClick={(e) => {
                                             e.stopPropagation();
@@ -129,15 +139,15 @@ export default function MonthGrid({ cells, onSelectDay, setViewMode, onViewEvent
                                         }}
                                     >
                                         <div
-                                            className="text-truncate small fw-semibold text-dark flex-grow-1"
-                                            style={{ fontSize: 11 }}
+                                            className="text-truncate fw-semibold text-dark flex-grow-1"
+                                            style={{ fontSize: 10 }}
                                         >
                                             {ev.title}
                                         </div>
-                                        {ev.startMin !== undefined && !ev.allDay && (
+                                        {ev.startMin !== undefined && !ev.allDay && ev.kind !== "task" && (
                                             <div
-                                                className="small text-secondary text-nowrap"
-                                                style={{ fontSize: 10 }}
+                                                className="text-secondary text-nowrap ms-1"
+                                                style={{ fontSize: 9 }}
                                             >
                                                 {minutesToLabel(ev.startMin)}
                                             </div>
@@ -146,10 +156,10 @@ export default function MonthGrid({ cells, onSelectDay, setViewMode, onViewEvent
                                 ))}
                                 {moreCount > 0 && (
                                     <div
-                                        className="px-2 small text-secondary fw-bold"
-                                        style={{ fontSize: 11 }}
+                                        className="px-1 text-secondary fw-bold"
+                                        style={{ fontSize: 10 }}
                                     >
-                                        +{moreCount} more
+                                        +{moreCount}
                                     </div>
                                 )}
                             </div>
