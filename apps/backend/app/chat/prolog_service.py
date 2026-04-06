@@ -411,8 +411,6 @@ class PrologService:
             for busy_start, busy_end in busy_intervals:
                 if current < busy_end and busy_start < slot_end:
                     is_free = False
-                    # Skip to after this busy interval
-                    current = busy_end
                     break
             
             if is_free:
@@ -425,11 +423,8 @@ class PrologService:
                     end_hour=end_h,
                     end_minute=end_m,
                 ))
-                current += step
             
-            # Safety: advance if we didn't move
-            if current == min_start or (current < min_start):
-                current += step
+            current += step
         
         return free_slots
     

@@ -29,7 +29,6 @@ from app.chat.schemas import (
 from app.chat.llm_service import LLMService
 from app.chat.prolog_service import get_prolog_service, PrologService
 from app.chat.event_repository import EventRepository
-from app.chat.date_parser import parse_date_reference, parse_date_reference_safe
 
 
 # In-memory session storage (for simplicity - not persistent)
@@ -208,20 +207,7 @@ class ChatAgentService:
         event_data = data.get("event", {})
         missing_fields = data.get("missing_fields", [])
         
-        # Parse date reference using Python instead of relying on LLM
-        date_ref = event_data.get("date_ref")
-        if date_ref:
-            parsed_date = parse_date_reference_safe(date_ref)
-            if parsed_date:
-                event_data["day"], event_data["month"], event_data["year"] = parsed_date
-            else:
-                # Invalid date reference
-                return self._build_response(
-                    session_id, context,
-                    f"I couldn't understand the date '{date_ref}'. Please try again with something like 'tomorrow', 'next Monday', or '15/4'.",
-                )
-        
-        # Fill in defaults for missing month/year (if not from date_ref)
+        # Fill in defaults for missing month/year
         now = datetime.now()
         if event_data.get("month") is None:
             event_data["month"] = now.month
@@ -499,21 +485,10 @@ class ChatAgentService:
         query = data.get("query", {})
         query_type = query.get("type", "day")
         
-        # Parse date reference using Python
-        date_ref = query.get("date_ref")
-        if date_ref:
-            parsed_date = parse_date_reference_safe(date_ref)
-            if parsed_date:
-                day, month, year = parsed_date
-            else:
-                return self._build_response(
-                    session_id, context,
-                    f"I couldn't understand the date '{date_ref}'. Please try again.",
-                )
-        else:
-            # Default to today
-            now = datetime.now()
-            day, month, year = now.day, now.month, now.year
+        now = datetime.now()
+        day = query.get("day", now.day)
+        month = query.get("month", now.month)
+        year = query.get("year", now.year)
         
         events = await self.repo.get_events_for_query(
             query_type, day, month, year
@@ -582,23 +557,12 @@ class ChatAgentService:
             if "end_minute" in data:
                 context.event_data.end_minute = data["end_minute"]
         elif field == "day":
-            # Parse date reference using Python
-            date_ref = data.get("date_ref")
-            if date_ref:
-                parsed_date = parse_date_reference_safe(date_ref)
-                if parsed_date:
-                    context.event_data.day, context.event_data.month, context.event_data.year = parsed_date
-                else:
-                    return self._build_response(
-                        session_id, context,
-                        f"I couldn't understand the date '{date_ref}'. Please try something like 'tomorrow', 'next Monday', or '15/4'.",
-                    )
-            elif "day" in data:
+            if "day" in data:
                 context.event_data.day = data["day"]
-                if "month" in data:
-                    context.event_data.month = data["month"]
-                if "year" in data:
-                    context.event_data.year = data["year"]
+            if "month" in data:
+                context.event_data.month = data["month"]
+            if "year" in data:
+                context.event_data.year = data["year"]
         
         # Check for remaining missing fields
         missing = context.event_data.get_missing_fields()
@@ -746,17 +710,8 @@ class ChatAgentService:
             return await self._find_same_time_different_days(session_id, context)
         elif choice == 2:
             context.preference_type = PreferenceType.SPECIFIC_DAY
-            # Check if day was provided (as date_ref)
-            date_ref = pref_data.get("date_ref")
-            if date_ref:
-                parsed_date = parse_date_reference_safe(date_ref)
-                if parsed_date:
-                    day, month, year = parsed_date
-                    return await self._find_slots_on_day(
-                        session_id, context, day, month, year
-                    )
-            # Also check for direct day/month/year (from LLM fallback)
-            elif pref_data.get("day"):
+            # Check if day was provided
+            if pref_data.get("day"):
                 return await self._find_slots_on_day(
                     session_id, context,
                     pref_data["day"], pref_data.get("month"), pref_data.get("year")
@@ -767,17 +722,8 @@ class ChatAgentService:
             )
         elif choice == 3:
             context.preference_type = PreferenceType.SPECIFIC_DAY_AND_TIME
-            # Parse date reference if provided
-            date_ref = pref_data.get("date_ref")
-            if date_ref:
-                parsed_date = parse_date_reference_safe(date_ref)
-                if parsed_date and pref_data.get("start_hour") is not None:
-                    pref_data["day"], pref_data["month"], pref_data["year"] = parsed_date
-                    return await self._check_specific_time(
-                        session_id, context, pref_data
-                    )
-            # Fallback to direct fields
-            elif pref_data.get("day") and pref_data.get("start_hour") is not None:
+            # Check if full details provided
+            if pref_data.get("day") and pref_data.get("start_hour") is not None:
                 return await self._check_specific_time(
                     session_id, context, pref_data
                 )

@@ -2,180 +2,434 @@
 """
 System prompts for different LLM states.
 
-The LLM extracts raw date references - Python handles the actual date calculations.
+Each state has a specific prompt that tells the LLM what to extract from user input.
+The LLM only converts natural language to structured JSON - it does NOT generate responses.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
+
+
+def get_current_date_context() -> str:
+    """Get current date for context in prompts."""
+    now = datetime.now()
+    return f"Today is {now.strftime('%A, %B %d, %Y')} (day={now.day}, month={now.month}, year={now.year})."
 
 
 # =============================================================================
 # INIT STATE - Parse user intent
 # =============================================================================
-INTENT_PARSE_PROMPT = """You are a JSON converter for a calendar assistant. Extract information from natural language.
+INTENT_PARSE_PROMPT = """You are a JSON converter for a calendar assistant. Your ONLY job is to convert natural language into structured JSON.
 
-CRITICAL RULES:
-1. ONLY output valid JSON - no explanations, no markdown, no text
-2. For dates, extract the RAW reference - do NOT calculate dates yourself
-3. For time, convert to 24-hour format: 9AM=9, 9PM=21, 12PM=12, 12AM=0
+IMPORTANT RULES:
+1. ONLY output valid JSON - no explanations, no text, just JSON
+2. Use the current date to resolve relative dates (tomorrow, next week, etc.)
+3. If month or year is not specified, use the current month/year
+4. "Next week" means the same day next week
+5. Time can be written as "9AM", "9:00", "9-10AM", "from 9 to 10"
 
-Date references to extract (as strings):
-- "today", "tomorrow", "day_after_tomorrow"
-- "next_week" (same day next week)
-- "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"
-- "next_monday", "next_tuesday", etc.
-- Specific dates like "7/4", "15/4/2026" as date strings
+{current_date}
 
-INTENTS TO DETECT:
+Detect one of these intents:
 - "add_event": User wants to add/create/schedule a new event
 - "edit_event": User wants to modify/change/update an existing event  
 - "remove_event": User wants to delete/cancel/remove an event
-- "query_events": User wants to see/list/check their events
+- "query_events": User wants to see/list/check their events (on a day, week, or month)
 
-OUTPUT FORMAT (strict JSON only):
+OUTPUT FORMAT (must be valid JSON):
 {{
     "intent": "add_event" | "edit_event" | "remove_event" | "query_events",
     "event": {{
         "title": "event title or null",
-        "date_ref": "tomorrow | today | next_week | monday | next_monday | DD/MM | DD/MM/YYYY or null",
-        "start_hour": number 0-23 or null,
-        "start_minute": number 0-59 or null,
-        "end_hour": number 0-23 or null,
-        "end_minute": number 0-59 or null,
+        "day": number or null (1-31),
+        "month": number or null (1-12),
+        "year": number or null,
+        "start_hour": number or null (0-23),
+        "start_minute": number or null (0-59),
+        "end_hour": number or null (0-23),
+        "end_minute": number or null (0-59),
         "location": "location or null",
         "notes": "notes or null"
     }},
     "missing_fields": ["list of missing required fields"],
     "target_event": {{
-        "title": "for edit/remove",
-        "date_ref": "date reference or null"
+        "title": "title to search for (for edit/remove)",
+        "day": number or null,
+        "month": number or null,
+        "year": number or null
     }},
     "query": {{
-        "type": "day" | "week" | "month",
-        "date_ref": "date reference or null"
+        "type": "day" | "week" | "month" | "time",
+        "day": number or null,
+        "month": number or null,
+        "year": number or null,
+        "start_hour": number or null,
+        "end_hour": number or null
     }}
 }}
 
+Required fields for add_event: title, day, month, year, start_hour, start_minute, end_hour, end_minute
+
 EXAMPLES:
-Input: "meeting tomorrow 9-10am"
-Output: {{"intent": "add_event", "event": {{"title": "meeting", "date_ref": "tomorrow", "start_hour": 9, "start_minute": 0, "end_hour": 10, "end_minute": 0, "location": null, "notes": null}}, "missing_fields": [], "target_event": null, "query": null}}
 
-Input: "add event next Monday 2-4pm"
-Output: {{"intent": "add_event", "event": {{"title": null, "date_ref": "next_monday", "start_hour": 14, "start_minute": 0, "end_hour": 16, "end_minute": 0, "location": null, "notes": null}}, "missing_fields": ["title"], "target_event": null, "query": null}}
+User: "I want to have a meeting tomorrow 9-10AM"
+Output:
+{{
+    "intent": "add_event",
+    "event": {{
+        "title": "meeting",
+        "day": {tomorrow_day},
+        "month": {current_month},
+        "year": {current_year},
+        "start_hour": 9,
+        "start_minute": 0,
+        "end_hour": 10,
+        "end_minute": 0,
+        "location": null,
+        "notes": null
+    }},
+    "missing_fields": [],
+    "target_event": null,
+    "query": null
+}}
 
-Input: "what do I have tomorrow?"
-Output: {{"intent": "query_events", "event": null, "missing_fields": [], "target_event": null, "query": {{"type": "day", "date_ref": "tomorrow"}}}}
+User: "Schedule customer meeting next Monday from 2pm to 4pm"
+Output:
+{{
+    "intent": "add_event",
+    "event": {{
+        "title": "customer meeting",
+        "day": {next_monday_day},
+        "month": {next_monday_month},
+        "year": {next_monday_year},
+        "start_hour": 14,
+        "start_minute": 0,
+        "end_hour": 16,
+        "end_minute": 0,
+        "location": null,
+        "notes": null
+    }},
+    "missing_fields": [],
+    "target_event": null,
+    "query": null
+}}
 
-User message: "{user_message}"
+User: "What do I have tomorrow?"
+Output:
+{{
+    "intent": "query_events",
+    "event": null,
+    "missing_fields": [],
+    "target_event": null,
+    "query": {{
+        "type": "day",
+        "day": {tomorrow_day},
+        "month": {current_month},
+        "year": {current_year},
+        "start_hour": null,
+        "end_hour": null
+    }}
+}}
 
-Output JSON:"""
+User: "Delete the dentist appointment on Friday"
+Output:
+{{
+    "intent": "remove_event",
+    "event": null,
+    "missing_fields": [],
+    "target_event": {{
+        "title": "dentist appointment",
+        "day": {friday_day},
+        "month": {friday_month},
+        "year": {friday_year}
+    }},
+    "query": null
+}}
+
+User: "Add an event tomorrow"
+Output:
+{{
+    "intent": "add_event",
+    "event": {{
+        "title": null,
+        "day": {tomorrow_day},
+        "month": {current_month},
+        "year": {current_year},
+        "start_hour": null,
+        "start_minute": null,
+        "end_hour": null,
+        "end_minute": null,
+        "location": null,
+        "notes": null
+    }},
+    "missing_fields": ["title", "start_time", "end_time"],
+    "target_event": null,
+    "query": null
+}}
+
+Now convert the following user message to JSON:
+"""
 
 
 # =============================================================================
 # CONFIRM_CONFLICT STATE - Parse yes/no response
 # =============================================================================
-YES_NO_PARSE_PROMPT = """Convert user response to yes/no. ONLY output JSON.
+YES_NO_PARSE_PROMPT = """You are a JSON converter. Your ONLY job is to determine if the user's response is positive (yes) or negative (no).
 
-Positive: yes, yeah, sure, please, help, ok, okay, fine, definitely, y
-Negative: no, nope, cancel, never mind, stop, exit, n
+RULES:
+1. ONLY output valid JSON - no explanations
+2. Positive words: yes, yeah, yep, sure, please, pls, help, ok, okay, fine, alright, of course, definitely
+3. Negative words: no, nope, nah, cancel, never mind, forget it, stop, exit, quit
 
-Output: {{"answer": true}} or {{"answer": false}}
+OUTPUT FORMAT:
+{{
+    "answer": true or false
+}}
 
-User: "{user_message}"
-Output:"""
+EXAMPLES:
+User: "yes please" -> {{"answer": true}}
+User: "help me" -> {{"answer": true}}
+User: "sure" -> {{"answer": true}}
+User: "no thanks" -> {{"answer": false}}
+User: "cancel" -> {{"answer": false}}
+User: "never mind" -> {{"answer": false}}
+
+Now determine if this is positive or negative:
+"""
 
 
 # =============================================================================
 # SELECT_PREFERENCE STATE - Parse preference choice
 # =============================================================================
-PREFERENCE_PARSE_PROMPT = """Determine which preference option (1-4) the user selected.
+PREFERENCE_PARSE_PROMPT = """You are a JSON converter. Your ONLY job is to determine which preference the user selected.
 
-Options:
-1 = Same time on different day
-2 = Specific day (extract date_ref like "monday", "tomorrow", "15/4")
-3 = Specific day AND time (extract date_ref and time)
-4 = Any time I'm free
+RULES:
+1. ONLY output valid JSON - no explanations
+2. Match user input to one of these 4 choices:
 
-ONLY output JSON:
+Choice 1: "Same time on different day" - user wants to keep the same time but on a different day
+Keywords: same time, different day, another day, other day
+
+Choice 2: "Specific day" - user wants a particular day but flexible on time
+Keywords: specific day, on Monday, on Tuesday, on [day], [date]
+
+Choice 3: "Specific day and time" - user has exact day and time in mind
+Keywords: at [time] on [day], [day] [time], specific time and day
+
+Choice 4: "Any time I'm free" - user is flexible, any free slot works
+Keywords: any time, whenever, any free, flexible, you choose, anytime
+
+OUTPUT FORMAT:
 {{
-    "choice": 1|2|3|4,
-    "date_ref": "tomorrow | monday | DD/MM or null",
-    "start_hour": number or null,
-    "start_minute": number or null
+    "choice": 1 | 2 | 3 | 4,
+    "day": number or null (if choice 2 or 3),
+    "month": number or null (if choice 2 or 3),
+    "year": number or null (if choice 2 or 3),
+    "start_hour": number or null (if choice 3),
+    "start_minute": number or null (if choice 3)
 }}
 
-User: "{user_message}"
-Output:"""
+{current_date}
+
+EXAMPLES:
+User: "same time but different day" -> {{"choice": 1, "day": null, "month": null, "year": null, "start_hour": null, "start_minute": null}}
+User: "on Monday" -> {{"choice": 2, "day": {monday_day}, "month": {monday_month}, "year": {monday_year}, "start_hour": null, "start_minute": null}}
+User: "Tuesday at 3pm" -> {{"choice": 3, "day": {tuesday_day}, "month": {tuesday_month}, "year": {tuesday_year}, "start_hour": 15, "start_minute": 0}}
+User: "any time works" -> {{"choice": 4, "day": null, "month": null, "year": null, "start_hour": null, "start_minute": null}}
+User: "1" -> {{"choice": 1, "day": null, "month": null, "year": null, "start_hour": null, "start_minute": null}}
+User: "choice 2" -> {{"choice": 2, "day": null, "month": null, "year": null, "start_hour": null, "start_minute": null}}
+
+Now determine the user's preference:
+"""
 
 
 # =============================================================================
 # SELECT_SLOT STATE - Parse slot selection
 # =============================================================================
-SLOT_SELECTION_PARSE_PROMPT = """Determine slot selection (1-4). ONLY output JSON.
+SLOT_SELECTION_PARSE_PROMPT = """You are a JSON converter. Your ONLY job is to determine which time slot the user selected.
 
-{{"choice": 1|2|3|4}}
+RULES:
+1. ONLY output valid JSON - no explanations
+2. User can select by number (1, 2, 3) or by saying "first", "second", "third"
+3. User can also request "more" to see more options
+4. Choice 4 or "more" means show more slots
 
-User: "{user_message}"
-Output:"""
+OUTPUT FORMAT:
+{{
+    "choice": 1 | 2 | 3 | 4
+}}
+
+EXAMPLES:
+User: "1" -> {{"choice": 1}}
+User: "the first one" -> {{"choice": 1}}
+User: "second option" -> {{"choice": 2}}
+User: "3" -> {{"choice": 3}}
+User: "show more" -> {{"choice": 4}}
+User: "more options" -> {{"choice": 4}}
+User: "4" -> {{"choice": 4}}
+
+Now determine the user's selection:
+"""
 
 
 # =============================================================================
 # COLLECT_INFO STATE - Parse missing field
 # =============================================================================
-FIELD_COLLECTION_PROMPT = """Extract the {field_name} from user's response.
+FIELD_COLLECTION_PROMPT = """You are a JSON converter. Your ONLY job is to extract a specific piece of information from the user's response.
 
-For title: {{"title": "event title"}}
-For start_time: {{"start_hour": 0-23, "start_minute": 0-59}}
-For end_time: {{"end_hour": 0-23, "end_minute": 0-59}}
-For day: {{"date_ref": "tomorrow | today | monday | DD/MM | DD/MM/YYYY"}}
+{current_date}
 
-Time: 9AM=9, 9PM=21, 2:30PM=14:30
+You are collecting: {field_name}
 
-User: "{user_message}"
-Output:"""
+RULES:
+1. ONLY output valid JSON - no explanations
+2. Extract ONLY the requested field
+3. For time, use 24-hour format
+
+OUTPUT FORMAT for title:
+{{"title": "the event title"}}
+
+OUTPUT FORMAT for start_time:
+{{"start_hour": number, "start_minute": number}}
+
+OUTPUT FORMAT for end_time:
+{{"end_hour": number, "end_minute": number}}
+
+OUTPUT FORMAT for day:
+{{"day": number, "month": number, "year": number}}
+
+EXAMPLES:
+Field: title, User: "team meeting" -> {{"title": "team meeting"}}
+Field: start_time, User: "9am" -> {{"start_hour": 9, "start_minute": 0}}
+Field: start_time, User: "14:30" -> {{"start_hour": 14, "start_minute": 30}}
+Field: end_time, User: "5pm" -> {{"end_hour": 17, "end_minute": 0}}
+Field: day, User: "tomorrow" -> {{"day": {tomorrow_day}, "month": {current_month}, "year": {current_year}}}
+Field: day, User: "next Monday" -> {{"day": {monday_day}, "month": {monday_month}, "year": {monday_year}}}
+
+Now extract the {field_name}:
+"""
 
 
 # =============================================================================
 # CONFIRM_ACTION STATE - Parse confirmation
 # =============================================================================
-CONFIRMATION_PARSE_PROMPT = """Determine if user confirmed. ONLY output JSON.
+CONFIRMATION_PARSE_PROMPT = """You are a JSON converter. Your ONLY job is to determine if the user confirmed or cancelled.
 
-Confirm: yes, confirm, ok, sure, do it, proceed
-Cancel: no, cancel, back, go back, change
+RULES:
+1. ONLY output valid JSON - no explanations
+2. Confirm words: yes, confirm, ok, okay, sure, do it, proceed, accept
+3. Cancel words: no, cancel, back, go back, change, don't, stop
 
-{{"confirmed": true}} or {{"confirmed": false}}
+OUTPUT FORMAT:
+{{
+    "confirmed": true or false
+}}
 
-User: "{user_message}"
-Output:"""
+EXAMPLES:
+User: "yes, confirm" -> {{"confirmed": true}}
+User: "looks good" -> {{"confirmed": true}}
+User: "no, go back" -> {{"confirmed": false}}
+User: "cancel" -> {{"confirmed": false}}
+User: "I want to change" -> {{"confirmed": false}}
+
+Now determine if user confirmed:
+"""
 
 
 def build_intent_prompt(user_message: str) -> str:
-    """Build the intent parsing prompt."""
-    return INTENT_PARSE_PROMPT.format(user_message=user_message)
+    """Build the intent parsing prompt with current date context."""
+    now = datetime.now()
+    from datetime import timedelta
+    
+    tomorrow = now + timedelta(days=1)
+    
+    # Calculate next Monday
+    days_until_monday = (7 - now.weekday()) % 7
+    if days_until_monday == 0:
+        days_until_monday = 7
+    next_monday = now + timedelta(days=days_until_monday)
+    
+    # Calculate this Friday
+    days_until_friday = (4 - now.weekday()) % 7
+    if days_until_friday == 0:
+        days_until_friday = 7
+    this_friday = now + timedelta(days=days_until_friday)
+    
+    prompt = INTENT_PARSE_PROMPT.format(
+        current_date=get_current_date_context(),
+        tomorrow_day=tomorrow.day,
+        current_month=now.month,
+        current_year=now.year,
+        next_monday_day=next_monday.day,
+        next_monday_month=next_monday.month,
+        next_monday_year=next_monday.year,
+        friday_day=this_friday.day,
+        friday_month=this_friday.month,
+        friday_year=this_friday.year,
+    )
+    
+    return prompt + f"\nUser: \"{user_message}\"\nOutput:"
 
 
 def build_yes_no_prompt(user_message: str) -> str:
     """Build the yes/no parsing prompt."""
-    return YES_NO_PARSE_PROMPT.format(user_message=user_message)
+    return YES_NO_PARSE_PROMPT + f"\nUser: \"{user_message}\"\nOutput:"
 
 
 def build_preference_prompt(user_message: str) -> str:
-    """Build the preference parsing prompt."""
-    return PREFERENCE_PARSE_PROMPT.format(user_message=user_message)
+    """Build the preference parsing prompt with date context."""
+    now = datetime.now()
+    from datetime import timedelta
+    
+    # Calculate next Monday and Tuesday
+    days_until_monday = (7 - now.weekday()) % 7
+    if days_until_monday == 0:
+        days_until_monday = 7
+    next_monday = now + timedelta(days=days_until_monday)
+    next_tuesday = next_monday + timedelta(days=1)
+    
+    prompt = PREFERENCE_PARSE_PROMPT.format(
+        current_date=get_current_date_context(),
+        monday_day=next_monday.day,
+        monday_month=next_monday.month,
+        monday_year=next_monday.year,
+        tuesday_day=next_tuesday.day,
+        tuesday_month=next_tuesday.month,
+        tuesday_year=next_tuesday.year,
+    )
+    
+    return prompt + f"\nUser: \"{user_message}\"\nOutput:"
 
 
 def build_slot_selection_prompt(user_message: str) -> str:
     """Build the slot selection parsing prompt."""
-    return SLOT_SELECTION_PARSE_PROMPT.format(user_message=user_message)
+    return SLOT_SELECTION_PARSE_PROMPT + f"\nUser: \"{user_message}\"\nOutput:"
 
 
 def build_field_collection_prompt(field_name: str, user_message: str) -> str:
     """Build the field collection prompt."""
-    return FIELD_COLLECTION_PROMPT.format(
+    now = datetime.now()
+    from datetime import timedelta
+    
+    tomorrow = now + timedelta(days=1)
+    days_until_monday = (7 - now.weekday()) % 7
+    if days_until_monday == 0:
+        days_until_monday = 7
+    next_monday = now + timedelta(days=days_until_monday)
+    
+    prompt = FIELD_COLLECTION_PROMPT.format(
+        current_date=get_current_date_context(),
         field_name=field_name,
-        user_message=user_message
+        tomorrow_day=tomorrow.day,
+        current_month=now.month,
+        current_year=now.year,
+        monday_day=next_monday.day,
+        monday_month=next_monday.month,
+        monday_year=next_monday.year,
     )
+    
+    return prompt + f"\nUser: \"{user_message}\"\nOutput:"
 
 
 def build_confirmation_prompt(user_message: str) -> str:
     """Build the confirmation parsing prompt."""
-    return CONFIRMATION_PARSE_PROMPT.format(user_message=user_message)
+    return CONFIRMATION_PARSE_PROMPT + f"\nUser: \"{user_message}\"\nOutput:"
