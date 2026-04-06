@@ -30,10 +30,12 @@ IMPORTANT RULES:
 {current_date}
 
 Detect one of these intents:
-- "add_event": User wants to add/create/schedule a new event
-- "edit_event": User wants to modify/change/update an existing event  
-- "remove_event": User wants to delete/cancel/remove an event
-- "query_events": User wants to see/list/check their events (on a day, week, or month)
+- "add_event": User wants to add/create/schedule/set up a new event
+- "edit_event": User wants to modify/change/update/move/reschedule/edit an existing event  
+- "remove_event": User wants to delete/cancel/remove/clear an event
+- "query_events": User wants to see/list/check/view their events (on a day, week, or month)
+
+IMPORTANT: If the user mentions editing, changing, or removing an event WITHOUT specifying which event, still detect the correct intent. The system will ask for more details.
 
 OUTPUT FORMAT (must be valid JSON):
 {{
@@ -163,6 +165,96 @@ Output:
     }},
     "missing_fields": ["title", "start_time", "end_time"],
     "target_event": null,
+    "query": null
+}}
+
+User: "I want to edit an event tomorrow"
+Output:
+{{
+    "intent": "edit_event",
+    "event": null,
+    "missing_fields": [],
+    "target_event": {{
+        "title": null,
+        "day": {tomorrow_day},
+        "month": {current_month},
+        "year": {tomorrow_year}
+    }},
+    "query": null
+}}
+
+User: "edit my schedule for next week"
+Output:
+{{
+    "intent": "edit_event",
+    "event": null,
+    "missing_fields": [],
+    "target_event": {{
+        "title": null,
+        "day": null,
+        "month": null,
+        "year": null
+    }},
+    "query": null
+}}
+
+User: "change the meeting time"
+Output:
+{{
+    "intent": "edit_event",
+    "event": null,
+    "missing_fields": [],
+    "target_event": {{
+        "title": "meeting",
+        "day": null,
+        "month": null,
+        "year": null
+    }},
+    "query": null
+}}
+
+User: "remove an event"
+Output:
+{{
+    "intent": "remove_event",
+    "event": null,
+    "missing_fields": [],
+    "target_event": {{
+        "title": null,
+        "day": null,
+        "month": null,
+        "year": null
+    }},
+    "query": null
+}}
+
+User: "delete something tomorrow"
+Output:
+{{
+    "intent": "remove_event",
+    "event": null,
+    "missing_fields": [],
+    "target_event": {{
+        "title": null,
+        "day": {tomorrow_day},
+        "month": {current_month},
+        "year": {tomorrow_year}
+    }},
+    "query": null
+}}
+
+User: "cancel my appointment on Monday"
+Output:
+{{
+    "intent": "remove_event",
+    "event": null,
+    "missing_fields": [],
+    "target_event": {{
+        "title": "appointment",
+        "day": {monday_day},
+        "month": {monday_month},
+        "year": {monday_year}
+    }},
     "query": null
 }}
 
@@ -335,6 +427,60 @@ Now determine if user confirmed:
 """
 
 
+# =============================================================================
+# SELECT_EDIT_FIELD STATE - Parse what user wants to edit
+# =============================================================================
+EDIT_FIELD_PARSE_PROMPT = """You are a JSON converter. Your ONLY job is to determine what the user wants to change about an event.
+
+{current_date}
+
+RULES:
+1. ONLY output valid JSON - no explanations
+2. Detect which field(s) user wants to change: date, time, title, or cancel
+3. If user provides actual values, extract them
+4. If user just says "date" or "time", leave values as null
+
+OUTPUT FORMAT:
+{{
+    "field": "date" | "time" | "title" | "cancel" | "both",
+    "new_day": number or null,
+    "new_month": number or null,
+    "new_year": number or null,
+    "new_start_hour": number or null,
+    "new_start_minute": number or null,
+    "new_end_hour": number or null,
+    "new_end_minute": number or null,
+    "new_title": string or null
+}}
+
+EXAMPLES:
+
+User: "date" -> {{"field": "date", "new_day": null, "new_month": null, "new_year": null, "new_start_hour": null, "new_start_minute": null, "new_end_hour": null, "new_end_minute": null, "new_title": null}}
+
+User: "change the time" -> {{"field": "time", "new_day": null, "new_month": null, "new_year": null, "new_start_hour": null, "new_start_minute": null, "new_end_hour": null, "new_end_minute": null, "new_title": null}}
+
+User: "title" -> {{"field": "title", "new_day": null, "new_month": null, "new_year": null, "new_start_hour": null, "new_start_minute": null, "new_end_hour": null, "new_end_minute": null, "new_title": null}}
+
+User: "cancel" -> {{"field": "cancel", "new_day": null, "new_month": null, "new_year": null, "new_start_hour": null, "new_start_minute": null, "new_end_hour": null, "new_end_minute": null, "new_title": null}}
+
+User: "move it to tomorrow" -> {{"field": "date", "new_day": {tomorrow_day}, "new_month": {tomorrow_month}, "new_year": {tomorrow_year}, "new_start_hour": null, "new_start_minute": null, "new_end_hour": null, "new_end_minute": null, "new_title": null}}
+
+User: "change time to 20:00-23:00" -> {{"field": "time", "new_day": null, "new_month": null, "new_year": null, "new_start_hour": 20, "new_start_minute": 0, "new_end_hour": 23, "new_end_minute": 0, "new_title": null}}
+
+User: "change it to 10 at 20:00-23:00" -> {{"field": "both", "new_day": 10, "new_month": {current_month}, "new_year": {current_year}, "new_start_hour": 20, "new_start_minute": 0, "new_end_hour": 23, "new_end_minute": 0, "new_title": null}}
+
+User: "move to 15/4 at 9am-10am" -> {{"field": "both", "new_day": 15, "new_month": 4, "new_year": {current_year}, "new_start_hour": 9, "new_start_minute": 0, "new_end_hour": 10, "new_end_minute": 0, "new_title": null}}
+
+User: "10:00-12:00" -> {{"field": "time", "new_day": null, "new_month": null, "new_year": null, "new_start_hour": 10, "new_start_minute": 0, "new_end_hour": 12, "new_end_minute": 0, "new_title": null}}
+
+User: "tomorrow" -> {{"field": "date", "new_day": {tomorrow_day}, "new_month": {tomorrow_month}, "new_year": {tomorrow_year}, "new_start_hour": null, "new_start_minute": null, "new_end_hour": null, "new_end_minute": null, "new_title": null}}
+
+User: "rename it to team sync" -> {{"field": "title", "new_day": null, "new_month": null, "new_year": null, "new_start_hour": null, "new_start_minute": null, "new_end_hour": null, "new_end_minute": null, "new_title": "team sync"}}
+
+Now determine what the user wants to change:
+"""
+
+
 def build_intent_prompt(user_message: str) -> str:
     """Build the intent parsing prompt with current date context."""
     now = datetime.now()
@@ -354,9 +500,20 @@ def build_intent_prompt(user_message: str) -> str:
         days_until_friday = 7
     this_friday = now + timedelta(days=days_until_friday)
     
+    # Calculate this Monday (nearest, could be today if today is Monday, or next week)
+    days_until_this_monday = (0 - now.weekday()) % 7
+    if days_until_this_monday == 0 and now.hour >= 18:  # If it's Monday evening, use next Monday
+        days_until_this_monday = 7
+    elif days_until_this_monday == 0:
+        days_until_this_monday = 0  # Today is Monday
+    else:
+        days_until_this_monday = (7 - now.weekday()) % 7 or 7  # Next Monday
+    this_monday = now + timedelta(days=days_until_this_monday)
+    
     prompt = INTENT_PARSE_PROMPT.format(
         current_date=get_current_date_context(),
         tomorrow_day=tomorrow.day,
+        tomorrow_year=tomorrow.year,
         current_month=now.month,
         current_year=now.year,
         next_monday_day=next_monday.day,
@@ -365,6 +522,9 @@ def build_intent_prompt(user_message: str) -> str:
         friday_day=this_friday.day,
         friday_month=this_friday.month,
         friday_year=this_friday.year,
+        monday_day=this_monday.day,
+        monday_month=this_monday.month,
+        monday_year=this_monday.year,
     )
     
     return prompt + f"\nUser: \"{user_message}\"\nOutput:"
@@ -433,3 +593,22 @@ def build_field_collection_prompt(field_name: str, user_message: str) -> str:
 def build_confirmation_prompt(user_message: str) -> str:
     """Build the confirmation parsing prompt."""
     return CONFIRMATION_PARSE_PROMPT + f"\nUser: \"{user_message}\"\nOutput:"
+
+
+def build_edit_field_prompt(user_message: str) -> str:
+    """Build the edit field parsing prompt with date context."""
+    now = datetime.now()
+    from datetime import timedelta
+    
+    tomorrow = now + timedelta(days=1)
+    
+    prompt = EDIT_FIELD_PARSE_PROMPT.format(
+        current_date=get_current_date_context(),
+        tomorrow_day=tomorrow.day,
+        tomorrow_month=tomorrow.month,
+        tomorrow_year=tomorrow.year,
+        current_month=now.month,
+        current_year=now.year,
+    )
+    
+    return prompt + f"\nUser: \"{user_message}\"\nOutput:"

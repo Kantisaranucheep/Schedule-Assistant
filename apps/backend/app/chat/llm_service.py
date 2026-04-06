@@ -21,6 +21,7 @@ from app.chat.prompts import (
     build_slot_selection_prompt,
     build_field_collection_prompt,
     build_confirmation_prompt,
+    build_edit_field_prompt,
 )
 
 
@@ -230,6 +231,30 @@ class LLMService:
             return False, None, "Response missing 'confirmed' field"
         
         return True, bool(confirmed), ""
+    
+    async def parse_edit_field(self, user_message: str) -> Tuple[bool, Optional[Dict[str, Any]], str]:
+        """
+        Parse what field the user wants to edit and any values provided.
+        
+        Returns:
+            Tuple of (success, parsed_data, error_message)
+            parsed_data contains: field, new_day, new_month, new_year, new_start_hour, etc.
+        """
+        prompt = build_edit_field_prompt(user_message)
+        success, response = await self._call_ollama(prompt)
+        
+        if not success:
+            return False, None, response
+        
+        data = self._extract_json(response)
+        if data is None:
+            return False, None, "Failed to parse LLM response as JSON"
+        
+        field = data.get("field")
+        if field not in ["date", "time", "title", "cancel", "both"]:
+            return False, None, f"Invalid field type: {field}"
+        
+        return True, data, ""
     
     async def check_available(self) -> bool:
         """Check if LLM is available."""

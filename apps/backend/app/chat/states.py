@@ -46,6 +46,24 @@ class AgentState(str, Enum):
     
     # Waiting for button click (with timeout)
     WAITING_CHOICE = "waiting_choice"
+    
+    # Edit/Remove flow: User selecting which day to look at events
+    SELECT_EVENT_DAY = "select_event_day"
+    
+    # Edit/Remove flow: User selecting which event to edit/remove
+    SELECT_EVENT = "select_event"
+    
+    # Edit flow: User selecting which field to edit
+    SELECT_EDIT_FIELD = "select_edit_field"
+    
+    # Edit flow: User entering new value for the field
+    ENTER_EDIT_VALUE = "enter_edit_value"
+    
+    # Edit flow: Confirm edit changes
+    CONFIRM_EDIT = "confirm_edit"
+    
+    # Remove flow: Confirm removal
+    CONFIRM_REMOVE = "confirm_remove"
 
 
 class IntentType(str, Enum):
@@ -72,6 +90,15 @@ class ResolutionType(str, Enum):
     
     FIND_SLOT_FOR_NEW = "find_slot_for_new"
     MOVE_CONFLICTING = "move_conflicting"
+
+
+class EditFieldType(str, Enum):
+    """Which field to edit in an event."""
+    
+    TITLE = "title"
+    DATE = "date"
+    TIME = "time"
+    DATE_AND_TIME = "date_and_time"
 
 
 @dataclass
@@ -181,6 +208,39 @@ class ConflictInfo:
 
 
 @dataclass
+class ExistingEvent:
+    """An existing event from the database for selection."""
+    
+    event_id: str
+    title: str
+    day: int
+    month: int
+    year: int
+    start_hour: int
+    start_minute: int
+    end_hour: int
+    end_minute: int
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "event_id": self.event_id,
+            "title": self.title,
+            "day": self.day,
+            "month": self.month,
+            "year": self.year,
+            "start_hour": self.start_hour,
+            "start_minute": self.start_minute,
+            "end_hour": self.end_hour,
+            "end_minute": self.end_minute,
+        }
+    
+    def format_display(self) -> str:
+        """Format for display to user."""
+        return f"{self.title} ({self.start_hour:02d}:{self.start_minute:02d} - {self.end_hour:02d}:{self.end_minute:02d})"
+
+
+@dataclass
 class TimeSlot:
     """A suggested time slot."""
     
@@ -271,6 +331,12 @@ class SessionContext:
     slot_offset: int = 0  # For "show more" functionality
     missing_field: Optional[str] = None  # Current field being collected
     
+    # Edit/Remove flow fields
+    events_on_day: list[ExistingEvent] = field(default_factory=list)  # Events for selection
+    selected_event: Optional[ExistingEvent] = None  # Event selected for edit/remove
+    edit_field: Optional[EditFieldType] = None  # Field being edited
+    new_event_data: Optional[Dict[str, Any]] = None  # New values for edited event (day, month, year, start_hour, etc.)
+    
     def reset(self):
         """Reset to initial state."""
         self.state = AgentState.INIT
@@ -287,6 +353,10 @@ class SessionContext:
         self.query_date = None
         self.slot_offset = 0
         self.missing_field = None
+        self.events_on_day = []
+        self.selected_event = None
+        self.edit_field = None
+        self.new_event_data = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary for storage."""
@@ -305,6 +375,10 @@ class SessionContext:
             "query_date": self.query_date,
             "slot_offset": self.slot_offset,
             "missing_field": self.missing_field,
+            "events_on_day": [e.to_dict() for e in self.events_on_day],
+            "selected_event": self.selected_event.to_dict() if self.selected_event else None,
+            "edit_field": self.edit_field.value if self.edit_field else None,
+            "new_event_data": self.new_event_data,  # Already a dict
         }
     
     @classmethod
@@ -325,6 +399,10 @@ class SessionContext:
         ctx.query_date = data.get("query_date")
         ctx.slot_offset = data.get("slot_offset", 0)
         ctx.missing_field = data.get("missing_field")
+        ctx.events_on_day = [ExistingEvent(**e) for e in data.get("events_on_day", [])]
+        ctx.selected_event = ExistingEvent(**data["selected_event"]) if data.get("selected_event") else None
+        ctx.edit_field = EditFieldType(data["edit_field"]) if data.get("edit_field") else None
+        ctx.new_event_data = data.get("new_event_data")  # Already a dict
         return ctx
 
 

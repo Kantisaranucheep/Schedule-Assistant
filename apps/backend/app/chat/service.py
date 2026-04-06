@@ -19,8 +19,8 @@ from dataclasses import dataclass, field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chat.states import (
-    AgentState, IntentType, PreferenceType, ResolutionType,
-    EventData, ConflictInfo, TimeSlot, FreeTimeRange, SessionContext
+    AgentState, IntentType, PreferenceType, ResolutionType, EditFieldType,
+    EventData, ConflictInfo, TimeSlot, FreeTimeRange, ExistingEvent, SessionContext
 )
 from app.chat.schemas import (
     ChatAgentResponse, AgentMessage, ChoiceOption, SessionState,
@@ -93,6 +93,19 @@ class ChatAgentService:
                 response = await self._handle_select_time_in_range_state(session_id, context, request.message)
             elif context.state == AgentState.CONFIRM_ACTION:
                 response = await self._handle_confirm_action_state(session_id, context, request.message)
+            # Edit/Remove flow states
+            elif context.state == AgentState.SELECT_EVENT_DAY:
+                response = await self._handle_select_event_day_state(session_id, context, request.message)
+            elif context.state == AgentState.SELECT_EVENT:
+                response = await self._handle_select_event_state(session_id, context, request.message)
+            elif context.state == AgentState.SELECT_EDIT_FIELD:
+                response = await self._handle_select_edit_field_state(session_id, context, request.message)
+            elif context.state == AgentState.ENTER_EDIT_VALUE:
+                response = await self._handle_enter_edit_value_state(session_id, context, request.message)
+            elif context.state == AgentState.CONFIRM_EDIT:
+                response = await self._handle_confirm_edit_state(session_id, context, request.message)
+            elif context.state == AgentState.CONFIRM_REMOVE:
+                response = await self._handle_confirm_remove_state(session_id, context, request.message)
             else:
                 # Unknown state - reset
                 context.reset()
@@ -313,15 +326,106 @@ class ChatAgentService:
         context: SessionContext,
         data: Dict[str, Any]
     ) -> ChatAgentResponse:
-        """Handle edit event intent."""
+        """Handle edit event intent - start the interactive edit flow."""
         target = data.get("target_event", {})
-        event_data = data.get("event", {})
         
-        if not target or not target.get("title"):
+        # Check if user specified a day
+        day = target.get("day")
+        month = target.get("month")
+        year = target.get("year")
+        
+        if day is not None:
+            # User specified a day - show events on that day
+            return await self._show_events_for_selection(session_id, context, day, month, year)
+        
+        # No day specified - ask user which day
+        context.state = AgentState.SELECT_EVENT_DAY
+        
+        now = datetime.now()
+        tomorrow = now + timedelta(days=1)
+        
+        return self._build_response(
+            session_id, context,
+            "Which day is the event you want to edit on?",
+            choices=[
+                ChoiceOption(id="today", label=f"Today ({now.day}/{now.month})", value="today"),
+                ChoiceOption(id="tomorrow", label=f"Tomorrow ({tomorrow.day}/{tomorrow.month})", value="tomorrow"),
+                ChoiceOption(id="this_week", label="This week", value="this_week"),
+            ],
+            timeout=60
+        )
+    
+    async def _show_events_for_selection(
+        self,
+        session_id: str,
+        context: SessionContext,
+        day: int,
+        month: Optional[int] = None,
+        year: Optional[int] = None
+    ) -> ChatAgentResponse:
+        """Show events on a specific day for user to select."""
+        now = datetime.now()
+        month = month or now.month
+        year = year or now.year
+        
+        # Store the query date for later
+        context.query_date = {"day": day, "month": month, "year": year}
+        
+        events = await self.repo.get_events_on_date(day, month, year)
+        
+        if not events:
+            context.state = AgentState.SELECT_EVENT_DAY
             return self._build_response(
                 session_id, context,
-                "Which event would you like to edit? Please include the event title and date.",
+                f"No events found on {day}/{month}/{year}. Please try another day.",
+                choices=[
+                    ChoiceOption(id="today", label="Today", value="today"),
+                    ChoiceOption(id="tomorrow", label="Tomorrow", value="tomorrow"),
+                    ChoiceOption(id="other", label="Enter a date", value="other"),
+                ],
+                timeout=60
             )
+        
+        # Store events for selection
+        context.events_on_day = [
+            ExistingEvent(
+                event_id=e["id"],
+                title=e["title"],
+                day=e["day"],
+                month=e["month"],
+                year=e["year"],
+                start_hour=e["start_hour"],
+                start_minute=e["start_minute"],
+                end_hour=e["end_hour"],
+                end_minute=e["end_minute"],
+            ) for e in events
+        ]
+        
+        context.state = AgentState.SELECT_EVENT
+        
+        # Build choices
+        choices = []
+        for i, evt in enumerate(context.events_on_day):
+            label = f"{i+1}. {evt.title} ({evt.start_hour:02d}:{evt.start_minute:02d} - {evt.end_hour:02d}:{evt.end_minute:02d})"
+            choices.append(ChoiceOption(id=f"event_{i}", label=label, value=str(i+1)))
+        
+        action_word = "edit" if context.intent == IntentType.EDIT_EVENT else "remove"
+        return self._build_response(
+            session_id, context,
+            f"Events on {day}/{month}/{year}. Which one would you like to {action_word}?",
+            choices=choices,
+            timeout=60
+        )
+    
+    async def _handle_legacy_edit_event(
+        self,
+        session_id: str,
+        context: SessionContext,
+        data: Dict[str, Any]
+    ) -> ChatAgentResponse:
+        """Legacy edit handler - kept for backwards compatibility with full event info."""
+        target = data.get("target_event", {})
+        event_data = data.get("event", {})
         
         # Find the event
         now = datetime.now()
@@ -442,39 +546,33 @@ class ChatAgentService:
         context: SessionContext,
         data: Dict[str, Any]
     ) -> ChatAgentResponse:
-        """Handle remove event intent."""
+        """Handle remove event intent - start the interactive remove flow."""
         target = data.get("target_event", {})
         
-        if not target or not target.get("title"):
-            return self._build_response(
-                session_id, context,
-                "Which event would you like to remove? Please include the event title and date.",
-            )
+        # Check if user specified a day
+        day = target.get("day")
+        month = target.get("month")
+        year = target.get("year")
+        
+        if day is not None:
+            # User specified a day - show events on that day
+            return await self._show_events_for_selection(session_id, context, day, month, year)
+        
+        # No day specified - ask user which day
+        context.state = AgentState.SELECT_EVENT_DAY
         
         now = datetime.now()
-        day = target.get("day", now.day)
-        month = target.get("month", now.month)
-        year = target.get("year", now.year)
-        
-        found_event = await self.repo.find_event_by_title_and_date(
-            target["title"], day, month, year
-        )
-        
-        if not found_event:
-            context.reset()
-            return self._build_response(
-                session_id, context,
-                f"I couldn't find an event matching \"{target['title']}\" on {day}/{month}/{year}.",
-            )
-        
-        # Delete the event
-        await self.repo.delete_event(found_event["id"])
-        context.reset()
+        tomorrow = now + timedelta(days=1)
         
         return self._build_response(
             session_id, context,
-            f"✓ Event \"{found_event['title']}\" has been removed.",
-            event_deleted=found_event["id"]
+            "Which day is the event you want to remove on?",
+            choices=[
+                ChoiceOption(id="today", label=f"Today ({now.day}/{now.month})", value="today"),
+                ChoiceOption(id="tomorrow", label=f"Tomorrow ({tomorrow.day}/{tomorrow.month})", value="tomorrow"),
+                ChoiceOption(id="this_week", label="This week", value="this_week"),
+            ],
+            timeout=60
         )
     
     async def _handle_query_events_intent(
@@ -1299,6 +1397,905 @@ class ChatAgentService:
                 session_id, context,
                 f"✓ Event \"{event.title}\" created on {slot.day}/{slot.month}/{slot.year} {slot.start_hour:02d}:{slot.start_minute:02d} - {slot.end_hour:02d}:{slot.end_minute:02d}",
                 event_created=created
+            )
+    
+    # =========================================================================
+    # Edit/Remove Flow State Handlers
+    # =========================================================================
+    
+    async def _handle_select_event_day_state(
+        self,
+        session_id: str,
+        context: SessionContext,
+        message: str
+    ) -> ChatAgentResponse:
+        """Handle SELECT_EVENT_DAY state - user is specifying which day to list events from."""
+        message_lower = message.strip().lower()
+        now = datetime.now()
+        
+        # Handle button clicks
+        if message_lower in ["today", "1"]:
+            day, month, year = now.day, now.month, now.year
+        elif message_lower in ["tomorrow", "2"]:
+            tomorrow = now + timedelta(days=1)
+            day, month, year = tomorrow.day, tomorrow.month, tomorrow.year
+        elif message_lower in ["this_week", "this week", "3"]:
+            # Show events for the whole week
+            return await self._show_week_events_for_selection(session_id, context)
+        elif message_lower == "other":
+            return self._build_response(
+                session_id, context,
+                "Please enter a date (e.g., '25/4' or '25/4/2025'):",
+                timeout=60
+            )
+        else:
+            # Try to parse as date
+            parsed_date = self._parse_date_input(message)
+            if parsed_date:
+                day, month, year = parsed_date
+            else:
+                return self._build_response(
+                    session_id, context,
+                    "I didn't understand that date. Please try again or select an option:",
+                    choices=[
+                        ChoiceOption(id="today", label=f"Today ({now.day}/{now.month})", value="today"),
+                        ChoiceOption(id="tomorrow", label="Tomorrow", value="tomorrow"),
+                        ChoiceOption(id="this_week", label="This week", value="this_week"),
+                    ],
+                    timeout=60
+                )
+        
+        return await self._show_events_for_selection(session_id, context, day, month, year)
+    
+    async def _show_week_events_for_selection(
+        self,
+        session_id: str,
+        context: SessionContext
+    ) -> ChatAgentResponse:
+        """Show events for the current week for user to select."""
+        now = datetime.now()
+        all_events = []
+        
+        # Get events for next 7 days
+        for i in range(7):
+            date = now + timedelta(days=i)
+            events = await self.repo.get_events_on_date(date.day, date.month, date.year)
+            for e in events:
+                all_events.append(ExistingEvent(
+                    event_id=e["id"],
+                    title=e["title"],
+                    day=e["day"],
+                    month=e["month"],
+                    year=e["year"],
+                    start_hour=e["start_hour"],
+                    start_minute=e["start_minute"],
+                    end_hour=e["end_hour"],
+                    end_minute=e["end_minute"],
+                ))
+        
+        if not all_events:
+            context.reset()
+            action_word = "edit" if context.intent == IntentType.EDIT_EVENT else "remove"
+            return self._build_response(
+                session_id, context,
+                f"No events found this week. There's nothing to {action_word}.",
+            )
+        
+        # Store events for selection
+        context.events_on_day = all_events
+        context.state = AgentState.SELECT_EVENT
+        
+        # Build choices
+        choices = []
+        for i, evt in enumerate(all_events):
+            label = f"{i+1}. {evt.title} ({evt.day}/{evt.month} {evt.start_hour:02d}:{evt.start_minute:02d})"
+            choices.append(ChoiceOption(id=f"event_{i}", label=label, value=str(i+1)))
+        
+        action_word = "edit" if context.intent == IntentType.EDIT_EVENT else "remove"
+        return self._build_response(
+            session_id, context,
+            f"Events this week. Which one would you like to {action_word}?",
+            choices=choices,
+            timeout=60
+        )
+    
+    def _parse_date_input(self, message: str) -> Optional[Tuple[int, int, int]]:
+        """Parse a date input from user message."""
+        import re
+        now = datetime.now()
+        
+        # Try format: d/m or dd/mm
+        match = re.match(r'^(\d{1,2})/(\d{1,2})$', message.strip())
+        if match:
+            day = int(match.group(1))
+            month = int(match.group(2))
+            return (day, month, now.year)
+        
+        # Try format: d/m/y or dd/mm/yyyy
+        match = re.match(r'^(\d{1,2})/(\d{1,2})/(\d{2,4})$', message.strip())
+        if match:
+            day = int(match.group(1))
+            month = int(match.group(2))
+            year = int(match.group(3))
+            if year < 100:
+                year += 2000
+            return (day, month, year)
+        
+        return None
+    
+    async def _handle_select_event_state(
+        self,
+        session_id: str,
+        context: SessionContext,
+        message: str
+    ) -> ChatAgentResponse:
+        """Handle SELECT_EVENT state - user is selecting an event from the list."""
+        if not context.events_on_day:
+            context.reset()
+            return self._build_response(
+                session_id, context,
+                "Session expired. Please start over.",
+            )
+        
+        # Parse selection (number or event_N format)
+        selection = None
+        message_clean = message.strip().lower()
+        
+        # Check for button value format "event_N"
+        if message_clean.startswith("event_"):
+            try:
+                selection = int(message_clean.replace("event_", ""))
+            except ValueError:
+                pass
+        else:
+            # Try to parse as number
+            try:
+                selection = int(message_clean) - 1  # Convert 1-based to 0-based
+            except ValueError:
+                pass
+        
+        # Validate selection
+        if selection is None or selection < 0 or selection >= len(context.events_on_day):
+            # Rebuild choices
+            choices = []
+            for i, evt in enumerate(context.events_on_day):
+                label = f"{i+1}. {evt.title} ({evt.start_hour:02d}:{evt.start_minute:02d})"
+                choices.append(ChoiceOption(id=f"event_{i}", label=label, value=str(i+1)))
+            
+            return self._build_response(
+                session_id, context,
+                "Please select a valid event number:",
+                choices=choices,
+                timeout=60
+            )
+        
+        # Store selected event
+        context.selected_event = context.events_on_day[selection]
+        
+        # Route based on intent
+        if context.intent == IntentType.EDIT_EVENT:
+            context.state = AgentState.SELECT_EDIT_FIELD
+            return self._build_response(
+                session_id, context,
+                f"What would you like to change about \"{context.selected_event.title}\"?",
+                choices=[
+                    ChoiceOption(id="date", label="📅 Change date", value="date"),
+                    ChoiceOption(id="time", label="🕐 Change time", value="time"),
+                    ChoiceOption(id="title", label="✏️ Change title", value="title"),
+                    ChoiceOption(id="cancel", label="❌ Cancel", value="cancel"),
+                ],
+                timeout=60
+            )
+        elif context.intent == IntentType.REMOVE_EVENT:
+            context.state = AgentState.CONFIRM_REMOVE
+            evt = context.selected_event
+            return self._build_response(
+                session_id, context,
+                f"Are you sure you want to remove \"{evt.title}\" on {evt.day}/{evt.month}/{evt.year} at {evt.start_hour:02d}:{evt.start_minute:02d}?",
+                choices=[
+                    ChoiceOption(id="confirm", label="✓ Yes, remove it", value="yes"),
+                    ChoiceOption(id="cancel", label="✗ No, keep it", value="no"),
+                ],
+                timeout=30
+            )
+        else:
+            context.reset()
+            return self._build_response(
+                session_id, context,
+                "Something went wrong. Please start over.",
+            )
+    
+    async def _handle_select_edit_field_state(
+        self,
+        session_id: str,
+        context: SessionContext,
+        message: str
+    ) -> ChatAgentResponse:
+        """Handle SELECT_EDIT_FIELD state - user is choosing what to edit."""
+        if not context.selected_event:
+            context.reset()
+            return self._build_response(
+                session_id, context,
+                "Session expired. Please start over.",
+            )
+        
+        message_lower = message.strip().lower()
+        
+        # Map user input to edit field
+        if message_lower in ["date", "1", "📅 change date", "change date"]:
+            context.edit_field = EditFieldType.DATE
+            context.state = AgentState.ENTER_EDIT_VALUE
+            return self._build_response(
+                session_id, context,
+                f"Current date: {context.selected_event.day}/{context.selected_event.month}/{context.selected_event.year}\n"
+                "What's the new date? (e.g., '25/4' or 'tomorrow')",
+                timeout=60
+            )
+        elif message_lower in ["time", "2", "🕐 change time", "change time"]:
+            context.edit_field = EditFieldType.TIME
+            context.state = AgentState.ENTER_EDIT_VALUE
+            evt = context.selected_event
+            return self._build_response(
+                session_id, context,
+                f"Current time: {evt.start_hour:02d}:{evt.start_minute:02d} - {evt.end_hour:02d}:{evt.end_minute:02d}\n"
+                "What's the new time? (e.g., '10:00-11:00' or '14:00 to 15:30')",
+                timeout=60
+            )
+        elif message_lower in ["title", "3", "✏️ change title", "change title"]:
+            context.edit_field = EditFieldType.TITLE
+            context.state = AgentState.ENTER_EDIT_VALUE
+            return self._build_response(
+                session_id, context,
+                f"Current title: \"{context.selected_event.title}\"\n"
+                "What's the new title?",
+                timeout=60
+            )
+        elif message_lower in ["cancel", "4", "❌ cancel"]:
+            context.reset()
+            return self._build_response(
+                session_id, context,
+                "Edit cancelled. How can I help you?",
+            )
+        else:
+            # Try to detect if user provided actual values directly
+            # e.g., "change it to 10 at 20:00-23:00" or "move to tomorrow 14:00-16:00"
+            combined_result = self._parse_combined_edit_input(message)
+            if combined_result:
+                # User provided both date and time in one message
+                new_date, new_time = combined_result
+                evt = context.selected_event
+                
+                # Build new_event_data with parsed values
+                context.new_event_data = {
+                    "day": new_date[0] if new_date else evt.day,
+                    "month": new_date[1] if new_date else evt.month,
+                    "year": new_date[2] if new_date else evt.year,
+                    "start_hour": new_time[0] if new_time else evt.start_hour,
+                    "start_minute": new_time[1] if new_time else evt.start_minute,
+                    "end_hour": new_time[2] if new_time else evt.end_hour,
+                    "end_minute": new_time[3] if new_time else evt.end_minute,
+                }
+                
+                return await self._check_edit_conflict_and_apply(session_id, context)
+            
+            # Check if user provided just a time range (e.g., "20:00-23:00")
+            time_only = self._parse_time_for_edit(message)
+            if time_only:
+                evt = context.selected_event
+                context.new_event_data = {
+                    "day": evt.day,
+                    "month": evt.month,
+                    "year": evt.year,
+                    "start_hour": time_only[0],
+                    "start_minute": time_only[1],
+                    "end_hour": time_only[2],
+                    "end_minute": time_only[3],
+                }
+                return await self._check_edit_conflict_and_apply(session_id, context)
+            
+            # Check if user provided just a date (e.g., "tomorrow", "10/4")
+            date_only = self._parse_date_for_edit(message)
+            if date_only:
+                evt = context.selected_event
+                context.new_event_data = {
+                    "day": date_only[0],
+                    "month": date_only[1],
+                    "year": date_only[2],
+                    "start_hour": evt.start_hour,
+                    "start_minute": evt.start_minute,
+                    "end_hour": evt.end_hour,
+                    "end_minute": evt.end_minute,
+                }
+                return await self._check_edit_conflict_and_apply(session_id, context)
+            
+            # Try to detect intent from keywords
+            if any(word in message_lower for word in ["date", "day", "when"]):
+                context.edit_field = EditFieldType.DATE
+                context.state = AgentState.ENTER_EDIT_VALUE
+                return self._build_response(
+                    session_id, context,
+                    f"Current date: {context.selected_event.day}/{context.selected_event.month}/{context.selected_event.year}\n"
+                    "What's the new date? (e.g., '25/4' or 'tomorrow')",
+                    timeout=60
+                )
+            elif any(word in message_lower for word in ["time", "hour", "start", "end"]):
+                context.edit_field = EditFieldType.TIME
+                context.state = AgentState.ENTER_EDIT_VALUE
+                evt = context.selected_event
+                return self._build_response(
+                    session_id, context,
+                    f"Current time: {evt.start_hour:02d}:{evt.start_minute:02d} - {evt.end_hour:02d}:{evt.end_minute:02d}\n"
+                    "What's the new time? (e.g., '10:00-11:00' or '14:00 to 15:30')",
+                    timeout=60
+                )
+            elif any(word in message_lower for word in ["title", "name", "call"]):
+                context.edit_field = EditFieldType.TITLE
+                context.state = AgentState.ENTER_EDIT_VALUE
+                return self._build_response(
+                    session_id, context,
+                    f"Current title: \"{context.selected_event.title}\"\n"
+                    "What's the new title?",
+                    timeout=60
+                )
+            
+            # Use LLM as final fallback to parse complex input
+            success, parsed_data, error = await self.llm.parse_edit_field(message)
+            if success and parsed_data:
+                field = parsed_data.get("field")
+                evt = context.selected_event
+                
+                if field == "cancel":
+                    context.reset()
+                    return self._build_response(
+                        session_id, context,
+                        "Edit cancelled. How can I help you?",
+                    )
+                
+                if field == "title":
+                    new_title = parsed_data.get("new_title")
+                    if new_title:
+                        # Apply title change directly
+                        updated = await self.repo.update_event(evt.event_id, title=new_title)
+                        context.reset()
+                        return self._build_response(
+                            session_id, context,
+                            f"✓ Title updated to \"{new_title}\"",
+                            event_updated=updated
+                        )
+                    else:
+                        context.edit_field = EditFieldType.TITLE
+                        context.state = AgentState.ENTER_EDIT_VALUE
+                        return self._build_response(
+                            session_id, context,
+                            f"Current title: \"{evt.title}\"\nWhat's the new title?",
+                            timeout=60
+                        )
+                
+                if field in ["date", "time", "both"]:
+                    # Build new_event_data from parsed values
+                    new_day = parsed_data.get("new_day") or evt.day
+                    new_month = parsed_data.get("new_month") or evt.month
+                    new_year = parsed_data.get("new_year") or evt.year
+                    new_start_hour = parsed_data.get("new_start_hour")
+                    new_start_minute = parsed_data.get("new_start_minute")
+                    new_end_hour = parsed_data.get("new_end_hour")
+                    new_end_minute = parsed_data.get("new_end_minute")
+                    
+                    # If time values were provided
+                    if new_start_hour is not None:
+                        context.new_event_data = {
+                            "day": new_day,
+                            "month": new_month,
+                            "year": new_year,
+                            "start_hour": new_start_hour,
+                            "start_minute": new_start_minute or 0,
+                            "end_hour": new_end_hour or (new_start_hour + 1),
+                            "end_minute": new_end_minute or 0,
+                        }
+                        return await self._check_edit_conflict_and_apply(session_id, context)
+                    
+                    # If only date was provided
+                    if field == "date" and parsed_data.get("new_day"):
+                        context.new_event_data = {
+                            "day": new_day,
+                            "month": new_month,
+                            "year": new_year,
+                            "start_hour": evt.start_hour,
+                            "start_minute": evt.start_minute,
+                            "end_hour": evt.end_hour,
+                            "end_minute": evt.end_minute,
+                        }
+                        return await self._check_edit_conflict_and_apply(session_id, context)
+                    
+                    # User said "date" or "time" but didn't provide values - ask for them
+                    if field == "date":
+                        context.edit_field = EditFieldType.DATE
+                        context.state = AgentState.ENTER_EDIT_VALUE
+                        return self._build_response(
+                            session_id, context,
+                            f"Current date: {evt.day}/{evt.month}/{evt.year}\nWhat's the new date?",
+                            timeout=60
+                        )
+                    elif field == "time":
+                        context.edit_field = EditFieldType.TIME
+                        context.state = AgentState.ENTER_EDIT_VALUE
+                        return self._build_response(
+                            session_id, context,
+                            f"Current time: {evt.start_hour:02d}:{evt.start_minute:02d} - {evt.end_hour:02d}:{evt.end_minute:02d}\nWhat's the new time?",
+                            timeout=60
+                        )
+            
+            # If LLM also failed, show options
+            return self._build_response(
+                session_id, context,
+                "What would you like to change?",
+                choices=[
+                    ChoiceOption(id="date", label="📅 Change date", value="date"),
+                    ChoiceOption(id="time", label="🕐 Change time", value="time"),
+                    ChoiceOption(id="title", label="✏️ Change title", value="title"),
+                    ChoiceOption(id="cancel", label="❌ Cancel", value="cancel"),
+                ],
+                timeout=60
+            )
+    
+    def _parse_combined_edit_input(self, message: str) -> Optional[Tuple[Optional[Tuple[int, int, int]], Optional[Tuple[int, int, int, int]]]]:
+        """
+        Parse combined date and time from user input like:
+        - "change it to 10 at 20:00-23:00" (day 10, time 20:00-23:00)
+        - "move to tomorrow 14:00-16:00"
+        - "10/4 at 9:00-10:00"
+        Returns (date_tuple, time_tuple) or None if can't parse either.
+        """
+        import re
+        
+        # Try to extract time range first
+        time_match = re.search(r'(\d{1,2}):(\d{2})\s*[-–to]+\s*(\d{1,2}):(\d{2})', message)
+        time_tuple = None
+        if time_match:
+            time_tuple = (
+                int(time_match.group(1)),
+                int(time_match.group(2)),
+                int(time_match.group(3)),
+                int(time_match.group(4))
+            )
+        
+        # Remove the time part for date parsing
+        message_without_time = message
+        if time_match:
+            message_without_time = message[:time_match.start()] + message[time_match.end():]
+        
+        # Try to extract date
+        date_tuple = None
+        message_lower = message_without_time.lower()
+        
+        # Check for relative dates
+        now = datetime.now()
+        if "tomorrow" in message_lower:
+            tomorrow = now + timedelta(days=1)
+            date_tuple = (tomorrow.day, tomorrow.month, tomorrow.year)
+        elif "today" in message_lower:
+            date_tuple = (now.day, now.month, now.year)
+        else:
+            # Check for day number patterns like "to 10", "day 10", "the 10th"
+            day_match = re.search(r'(?:to|day|the)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s|$|[^/\d])', message_lower)
+            if day_match:
+                day = int(day_match.group(1))
+                if 1 <= day <= 31:
+                    date_tuple = (day, now.month, now.year)
+            
+            # Check for d/m format
+            if not date_tuple:
+                date_match = re.search(r'(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?', message_without_time)
+                if date_match:
+                    day = int(date_match.group(1))
+                    month = int(date_match.group(2))
+                    year = int(date_match.group(3)) if date_match.group(3) else now.year
+                    if year < 100:
+                        year += 2000
+                    date_tuple = (day, month, year)
+        
+        # Return if we found at least one of date or time
+        if date_tuple or time_tuple:
+            return (date_tuple, time_tuple)
+        
+        return None
+    
+    async def _handle_enter_edit_value_state(
+        self,
+        session_id: str,
+        context: SessionContext,
+        message: str
+    ) -> ChatAgentResponse:
+        """Handle ENTER_EDIT_VALUE state - user is entering the new value."""
+        if not context.selected_event or not context.edit_field:
+            context.reset()
+            return self._build_response(
+                session_id, context,
+                "Session expired. Please start over.",
+            )
+        
+        evt = context.selected_event
+        
+        if context.edit_field == EditFieldType.TITLE:
+            # Update title directly - no conflict check needed
+            updated = await self.repo.update_event(
+                evt.event_id,
+                title=message.strip()
+            )
+            context.reset()
+            return self._build_response(
+                session_id, context,
+                f"✓ Title updated to \"{message.strip()}\"",
+                event_updated=updated
+            )
+        
+        elif context.edit_field == EditFieldType.DATE:
+            # Parse the new date
+            new_date = self._parse_date_for_edit(message)
+            if not new_date:
+                return self._build_response(
+                    session_id, context,
+                    "I couldn't understand that date. Please try again (e.g., '25/4', 'tomorrow', 'next monday'):",
+                    timeout=60
+                )
+            
+            new_day, new_month, new_year = new_date
+            
+            # Store new data for conflict check
+            context.new_event_data = {
+                "day": new_day,
+                "month": new_month,
+                "year": new_year,
+                "start_hour": evt.start_hour,
+                "start_minute": evt.start_minute,
+                "end_hour": evt.end_hour,
+                "end_minute": evt.end_minute,
+            }
+            
+            return await self._check_edit_conflict_and_apply(session_id, context)
+        
+        elif context.edit_field == EditFieldType.TIME:
+            # Parse the new time
+            new_time = self._parse_time_for_edit(message)
+            if not new_time:
+                return self._build_response(
+                    session_id, context,
+                    "I couldn't understand that time. Please try again (e.g., '10:00-11:00', '14:00 to 15:30'):",
+                    timeout=60
+                )
+            
+            start_hour, start_minute, end_hour, end_minute = new_time
+            
+            # Store new data for conflict check
+            context.new_event_data = {
+                "day": evt.day,
+                "month": evt.month,
+                "year": evt.year,
+                "start_hour": start_hour,
+                "start_minute": start_minute,
+                "end_hour": end_hour,
+                "end_minute": end_minute,
+            }
+            
+            return await self._check_edit_conflict_and_apply(session_id, context)
+        
+        context.reset()
+        return self._build_response(
+            session_id, context,
+            "Something went wrong. Please start over.",
+        )
+    
+    def _parse_date_for_edit(self, message: str) -> Optional[Tuple[int, int, int]]:
+        """Parse a date from user input for editing."""
+        import re
+        now = datetime.now()
+        message_lower = message.strip().lower()
+        
+        # Handle relative dates
+        if message_lower in ["today"]:
+            return (now.day, now.month, now.year)
+        elif message_lower in ["tomorrow"]:
+            tomorrow = now + timedelta(days=1)
+            return (tomorrow.day, tomorrow.month, tomorrow.year)
+        
+        # Handle day names
+        day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        for i, day_name in enumerate(day_names):
+            if day_name in message_lower:
+                # Find the next occurrence of this day
+                current_weekday = now.weekday()
+                target_weekday = i
+                days_ahead = target_weekday - current_weekday
+                if "next" in message_lower:
+                    days_ahead += 7
+                elif days_ahead <= 0:
+                    days_ahead += 7
+                target_date = now + timedelta(days=days_ahead)
+                return (target_date.day, target_date.month, target_date.year)
+        
+        # Try parsing explicit dates
+        return self._parse_date_input(message)
+    
+    def _parse_time_for_edit(self, message: str) -> Optional[Tuple[int, int, int, int]]:
+        """Parse a time range from user input for editing."""
+        import re
+        
+        # Pattern: HH:MM-HH:MM or HH:MM to HH:MM
+        pattern = r'(\d{1,2}):(\d{2})\s*[-–to]+\s*(\d{1,2}):(\d{2})'
+        match = re.search(pattern, message)
+        if match:
+            return (
+                int(match.group(1)),
+                int(match.group(2)),
+                int(match.group(3)),
+                int(match.group(4))
+            )
+        
+        # Pattern: HH-HH (assume :00 for minutes)
+        pattern = r'^(\d{1,2})\s*[-–to]+\s*(\d{1,2})$'
+        match = re.search(pattern, message.strip())
+        if match:
+            return (
+                int(match.group(1)),
+                0,
+                int(match.group(2)),
+                0
+            )
+        
+        return None
+    
+    async def _check_edit_conflict_and_apply(
+        self,
+        session_id: str,
+        context: SessionContext
+    ) -> ChatAgentResponse:
+        """Check for conflicts and apply the edit if none found."""
+        evt = context.selected_event
+        new_data = context.new_event_data
+        
+        # Get existing events on the new date, excluding the event being edited
+        existing_events = await self.repo.get_events_on_date(
+            new_data["day"], new_data["month"], new_data["year"]
+        )
+        existing_events = [e for e in existing_events if e["id"] != evt.event_id]
+        
+        # Check for conflicts
+        result = self.prolog.check_conflict(
+            new_data["start_hour"], new_data["start_minute"],
+            new_data["end_hour"], new_data["end_minute"],
+            existing_events
+        )
+        
+        if result.has_conflict:
+            conflict = result.conflicts[0]
+            
+            # Store conflict info and transition to conflict resolution
+            context.conflict_info = ConflictInfo(
+                event_id=conflict["id"],
+                title=conflict["title"],
+                day=new_data["day"],
+                month=new_data["month"],
+                year=new_data["year"],
+                start_hour=conflict["start_hour"],
+                start_minute=conflict["start_minute"],
+                end_hour=conflict["end_hour"],
+                end_minute=conflict["end_minute"],
+            )
+            
+            # Set up for conflict resolution
+            context.target_event_id = evt.event_id
+            context.event_data = EventData(
+                title=evt.title,
+                day=new_data["day"],
+                month=new_data["month"],
+                year=new_data["year"],
+                start_hour=new_data["start_hour"],
+                start_minute=new_data["start_minute"],
+                end_hour=new_data["end_hour"],
+                end_minute=new_data["end_minute"],
+            )
+            context.state = AgentState.CONFIRM_CONFLICT
+            
+            return self._build_response(
+                session_id, context,
+                f"⚠️ The new time conflicts with \"{conflict['title']}\" "
+                f"({conflict['start_hour']:02d}:{conflict['start_minute']:02d} - "
+                f"{conflict['end_hour']:02d}:{conflict['end_minute']:02d}). "
+                "Would you like help finding another time?",
+                choices=[
+                    ChoiceOption(id="yes", label="Yes, help me find another time", value="yes"),
+                    ChoiceOption(id="no", label="No, cancel the change", value="no"),
+                ],
+                timeout=30
+            )
+        
+        # No conflict - show confirmation before applying
+        context.state = AgentState.CONFIRM_EDIT
+        
+        # Build a summary of what will change
+        changes = []
+        if new_data["day"] != evt.day or new_data["month"] != evt.month or new_data["year"] != evt.year:
+            changes.append(f"📅 Date: {evt.day}/{evt.month}/{evt.year} → {new_data['day']}/{new_data['month']}/{new_data['year']}")
+        if new_data["start_hour"] != evt.start_hour or new_data["start_minute"] != evt.start_minute or \
+           new_data["end_hour"] != evt.end_hour or new_data["end_minute"] != evt.end_minute:
+            changes.append(f"🕐 Time: {evt.start_hour:02d}:{evt.start_minute:02d}-{evt.end_hour:02d}:{evt.end_minute:02d} → "
+                          f"{new_data['start_hour']:02d}:{new_data['start_minute']:02d}-{new_data['end_hour']:02d}:{new_data['end_minute']:02d}")
+        
+        changes_text = "\n".join(changes) if changes else "No changes detected"
+        
+        return self._build_response(
+            session_id, context,
+            f"**Changes to \"{evt.title}\":**\n{changes_text}\n\nConfirm these changes?",
+            choices=[
+                ChoiceOption(id="confirm", label="✓ Confirm", value="yes"),
+                ChoiceOption(id="change_date", label="📅 Change date", value="change_date"),
+                ChoiceOption(id="change_time", label="🕐 Change time", value="change_time"),
+                ChoiceOption(id="cancel", label="✗ Cancel", value="cancel"),
+            ],
+            timeout=60
+        )
+    
+    async def _handle_confirm_edit_state(
+        self,
+        session_id: str,
+        context: SessionContext,
+        message: str
+    ) -> ChatAgentResponse:
+        """Handle CONFIRM_EDIT state - user confirming or modifying the edit."""
+        if not context.selected_event or not context.new_event_data:
+            context.reset()
+            return self._build_response(
+                session_id, context,
+                "Session expired. Please start over.",
+            )
+        
+        message_lower = message.strip().lower()
+        evt = context.selected_event
+        new_data = context.new_event_data
+        
+        # Check for confirmation
+        if message_lower in ["yes", "confirm", "y", "✓ confirm", "ok", "okay"]:
+            # Apply the update
+            updated = await self.repo.update_event(
+                evt.event_id,
+                day=new_data["day"],
+                month=new_data["month"],
+                year=new_data["year"],
+                start_hour=new_data["start_hour"],
+                start_minute=new_data["start_minute"],
+                end_hour=new_data["end_hour"],
+                end_minute=new_data["end_minute"],
+            )
+            
+            context.reset()
+            return self._build_response(
+                session_id, context,
+                f"✓ Event \"{evt.title}\" updated to {new_data['day']}/{new_data['month']}/{new_data['year']} "
+                f"{new_data['start_hour']:02d}:{new_data['start_minute']:02d} - "
+                f"{new_data['end_hour']:02d}:{new_data['end_minute']:02d}",
+                event_updated=updated
+            )
+        
+        elif message_lower in ["cancel", "✗ cancel", "no", "n"]:
+            context.reset()
+            return self._build_response(
+                session_id, context,
+                "Edit cancelled. How can I help you?",
+            )
+        
+        elif message_lower in ["change_date", "📅 change date", "date"]:
+            context.edit_field = EditFieldType.DATE
+            context.state = AgentState.ENTER_EDIT_VALUE
+            return self._build_response(
+                session_id, context,
+                f"Current planned date: {new_data['day']}/{new_data['month']}/{new_data['year']}\n"
+                "What's the new date? (e.g., '25/4' or 'tomorrow')",
+                timeout=60
+            )
+        
+        elif message_lower in ["change_time", "🕐 change time", "time"]:
+            context.edit_field = EditFieldType.TIME
+            context.state = AgentState.ENTER_EDIT_VALUE
+            return self._build_response(
+                session_id, context,
+                f"Current planned time: {new_data['start_hour']:02d}:{new_data['start_minute']:02d} - {new_data['end_hour']:02d}:{new_data['end_minute']:02d}\n"
+                "What's the new time? (e.g., '10:00-11:00' or '14:00 to 15:30')",
+                timeout=60
+            )
+        
+        else:
+            # Try to parse as new date/time values directly
+            combined_result = self._parse_combined_edit_input(message)
+            if combined_result:
+                new_date, new_time = combined_result
+                if new_date:
+                    new_data["day"], new_data["month"], new_data["year"] = new_date
+                if new_time:
+                    new_data["start_hour"], new_data["start_minute"] = new_time[0], new_time[1]
+                    new_data["end_hour"], new_data["end_minute"] = new_time[2], new_time[3]
+                context.new_event_data = new_data
+                return await self._check_edit_conflict_and_apply(session_id, context)
+            
+            # Check for just time
+            time_only = self._parse_time_for_edit(message)
+            if time_only:
+                new_data["start_hour"], new_data["start_minute"] = time_only[0], time_only[1]
+                new_data["end_hour"], new_data["end_minute"] = time_only[2], time_only[3]
+                context.new_event_data = new_data
+                return await self._check_edit_conflict_and_apply(session_id, context)
+            
+            # Check for just date
+            date_only = self._parse_date_for_edit(message)
+            if date_only:
+                new_data["day"], new_data["month"], new_data["year"] = date_only
+                context.new_event_data = new_data
+                return await self._check_edit_conflict_and_apply(session_id, context)
+            
+            # Didn't understand - show options again
+            changes = []
+            if new_data["day"] != evt.day or new_data["month"] != evt.month or new_data["year"] != evt.year:
+                changes.append(f"📅 Date: {evt.day}/{evt.month}/{evt.year} → {new_data['day']}/{new_data['month']}/{new_data['year']}")
+            if new_data["start_hour"] != evt.start_hour or new_data["start_minute"] != evt.start_minute or \
+               new_data["end_hour"] != evt.end_hour or new_data["end_minute"] != evt.end_minute:
+                changes.append(f"🕐 Time: {evt.start_hour:02d}:{evt.start_minute:02d}-{evt.end_hour:02d}:{evt.end_minute:02d} → "
+                              f"{new_data['start_hour']:02d}:{new_data['start_minute']:02d}-{new_data['end_hour']:02d}:{new_data['end_minute']:02d}")
+            
+            changes_text = "\n".join(changes) if changes else "No changes detected"
+            
+            return self._build_response(
+                session_id, context,
+                f"**Changes to \"{evt.title}\":**\n{changes_text}\n\nConfirm or make more changes?",
+                choices=[
+                    ChoiceOption(id="confirm", label="✓ Confirm", value="yes"),
+                    ChoiceOption(id="change_date", label="📅 Change date", value="change_date"),
+                    ChoiceOption(id="change_time", label="🕐 Change time", value="change_time"),
+                    ChoiceOption(id="cancel", label="✗ Cancel", value="cancel"),
+                ],
+                timeout=60
+            )
+    
+    async def _handle_confirm_remove_state(
+        self,
+        session_id: str,
+        context: SessionContext,
+        message: str
+    ) -> ChatAgentResponse:
+        """Handle CONFIRM_REMOVE state - user is confirming event removal."""
+        if not context.selected_event:
+            context.reset()
+            return self._build_response(
+                session_id, context,
+                "Session expired. Please start over.",
+            )
+        
+        message_lower = message.strip().lower()
+        
+        # Check for confirmation
+        if message_lower in ["yes", "confirm", "y", "✓ yes, remove it", "remove", "delete"]:
+            evt = context.selected_event
+            await self.repo.delete_event(evt.event_id)
+            context.reset()
+            return self._build_response(
+                session_id, context,
+                f"✓ Event \"{evt.title}\" has been removed.",
+                event_deleted=evt.event_id
+            )
+        elif message_lower in ["no", "cancel", "n", "✗ no, keep it", "keep"]:
+            context.reset()
+            return self._build_response(
+                session_id, context,
+                "Okay, I won't remove the event. How can I help you?",
+            )
+        else:
+            evt = context.selected_event
+            return self._build_response(
+                session_id, context,
+                f"Are you sure you want to remove \"{evt.title}\"?",
+                choices=[
+                    ChoiceOption(id="confirm", label="✓ Yes, remove it", value="yes"),
+                    ChoiceOption(id="cancel", label="✗ No, keep it", value="no"),
+                ],
+                timeout=30
             )
     
     # =========================================================================
