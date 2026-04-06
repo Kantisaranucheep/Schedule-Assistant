@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     default_working_hours_start: str = "09:00"
     default_working_hours_end: str = "18:00"
 
+    # Ollama LLM Configuration
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.2"
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import "./SmartScheduler.css";
 import {
   Ev,
@@ -24,13 +25,13 @@ import FilterBar from "./components/FilterBar";
 import MonthGrid from "./components/MonthGrid";
 import DayView from "./components/DayView";
 import HotkeysModal from "./components/Modals/HotkeysModal";
-import ChatModal from "./components/Modals/ChatModal/ChatModal";
-import { useChatModal } from "./components/Modals/ChatModal/useChatModal";
 import EventModal from "./components/Modals/EventModal";
 import ViewEventModal from "./components/Modals/ViewEventModal";
 import { useEvents } from "./hooks/useEvents";
 
 export default function Home() {
+  const router = useRouter();
+  
   // Events and categories from API
   const { events: apiEvents, addEvent: apiAddEvent, editEvent: apiEditEvent, loading, error, calendarId, categories: apiCategories, refetch } = useEvents();
 
@@ -84,7 +85,6 @@ export default function Home() {
 
   // ===== Modals visibility =====
   const [hotkeysOpen, setHotkeysOpen] = useState(false);
-  const { chatOpen, setChatOpen, ...chatProps } = useChatModal();
   const [eventModalOpen, setEventModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<{ event: Ev; dateKey: string } | null>(null);
   const [viewingEvent, setViewingEvent] = useState<{ event: Ev; dateKey: string } | null>(null);
@@ -143,7 +143,6 @@ export default function Home() {
         setEditingEvent(null);
         setViewingEvent(null);
         setHotkeysOpen(false);
-        setChatOpen(false);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -380,7 +379,7 @@ export default function Home() {
         <Sidebar
           filteredEvents={filteredEvents}
           onHotkeysClick={() => setHotkeysOpen(true)}
-          onChatClick={() => setChatOpen(true)}
+          onChatClick={() => router.push('/chat')}
           onProfileClick={() => { }}
           onLogoClick={goToToday}
           onEventClick={(dateKey) => {
@@ -475,30 +474,6 @@ export default function Home() {
 
           {/* ===== HOTKEYS OVERLAY ===== */}
           <HotkeysModal isOpen={hotkeysOpen} onClose={() => setHotkeysOpen(false)} />
-
-          {/* ===== CHAT MODAL ===== */}
-          <ChatModal
-            isOpen={chatOpen}
-            onClose={() => setChatOpen(false)}
-            sessions={chatProps.sessions}
-            activeSessionId={chatProps.activeSessionId}
-            setActiveSessionId={chatProps.setActiveSessionId}
-            activeSession={chatProps.activeSession}
-            chatInput={chatProps.chatInput}
-            setChatInput={chatProps.setChatInput}
-            pushUserMessage={chatProps.pushUserMessage}
-            newSession={chatProps.newSession}
-            renameSession={chatProps.renameSession}
-            deleteSession={chatProps.deleteSession}
-            togglePinSession={chatProps.togglePinSession}
-            isTyping={chatProps.isTyping}
-            ttsEnabled={chatProps.ttsEnabled}
-            toggleTts={chatProps.toggleTts}
-            chatEndRef={chatProps.chatEndRef}
-            isRecording={chatProps.isRecording}
-            toggleRecording={chatProps.toggleRecording}
-            loading={chatProps.loading}
-          />
 
           {/* ===== EVENT MODAL ===== */}
           <EventModal

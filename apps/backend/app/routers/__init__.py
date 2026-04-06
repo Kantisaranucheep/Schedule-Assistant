@@ -6,8 +6,9 @@ from .categories import router as categories_router
 from .events import router as events_router
 from .tasks import router as tasks_router
 from .availability import router as availability_router
-from .chat import router as chat_router
 from .settings import router as settings_router
+
+# Note: chat router is now imported directly from app.chat.router in main.py
 
 __all__ = [
     "health_router",
@@ -16,6 +17,5 @@ __all__ = [
     "events_router",
     "tasks_router",
     "availability_router",
-    "chat_router",
     "settings_router",
 ]

@@ -16,9 +16,10 @@ from app.routers import (
     events_router,
     tasks_router,
     availability_router,
-    chat_router,
     settings_router,
 )
+# Import new chat router (replaces old agent/chat system)
+from app.chat.router import router as chat_agent_router
 
 
 @asynccontextmanager
@@ -40,10 +41,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware
+# CORS middleware - allow all origins in development
+origins = settings.cors_origins_list
+# Ensure localhost:3000 is always included for development
+if "http://localhost:3000" not in origins:
+    origins.append("http://localhost:3000")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -56,7 +62,7 @@ app.include_router(categories_router)
 app.include_router(events_router)
 app.include_router(tasks_router)
 app.include_router(availability_router)
-app.include_router(chat_router)
+app.include_router(chat_agent_router)  # New chat agent system
 app.include_router(settings_router)
 
 
