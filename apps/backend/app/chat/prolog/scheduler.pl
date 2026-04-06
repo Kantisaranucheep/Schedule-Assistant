@@ -34,7 +34,7 @@
 %% Predicates use First-Order Logic with:
 %% - Universal quantification (∀) via forall/2
 %% - Existential quantification (∃) via member/2
-%% - Logical connectives (∧, ∨, ¬) via Prolog's ,/;/\+
+# %% - Logical connectives (∧, ∨, ¬) via Prolog's ,/;/\+ 
 
 %% time_to_minutes(+Hour, +Minute, -TotalMinutes)
 %% Converts hour:minute to total minutes from midnight
@@ -79,7 +79,7 @@ intervals_overlap(Start1, End1, Start2, End2) :-
 %% Query: ∃e ∈ Events : overlaps(NewEvent, e)
 %%
 %% Resolution: We negate the goal and try to derive empty clause
-%% If we can't, the original query is true (conflict exists)
+# %% If we can't, the original query is true (conflict exists)
 
 %% events_overlap(+NewStart, +NewEnd, +ExistingStart, +ExistingEnd)
 %% Check if a new event overlaps with an existing event
@@ -110,7 +110,7 @@ check_conflict(NewStartH, NewStartM, NewEndH, NewEndM, ExistingEvents, Conflicts
 %% Constraint Solving: Find Free Time Slots
 %% ============================================================================
 %%
-%% Problem: Find time slots of duration D that don't conflict with existing events
+# %% Problem: Find time slots of duration D that don't conflict with existing events
 %%
 %% Constraint Satisfaction Problem (CSP):
 %% - Variables: SlotStart, SlotEnd
