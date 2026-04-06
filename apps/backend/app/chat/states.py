@@ -35,8 +35,11 @@ class AgentState(str, Enum):
     # User selecting preference (same time diff day, specific day, etc.)
     SELECT_PREFERENCE = "select_preference"
     
-    # User selecting from available slots
+    # User selecting from available slots (legacy fixed-duration slots)
     SELECT_SLOT = "select_slot"
+    
+    # User viewing free time ranges and entering a specific time
+    SELECT_TIME_IN_RANGE = "select_time_in_range"
     
     # Final confirmation before action
     CONFIRM_ACTION = "confirm_action"
@@ -207,6 +210,49 @@ class TimeSlot:
 
 
 @dataclass
+class FreeTimeRange:
+    """A contiguous free time range where user can pick any start time."""
+    
+    day: int
+    month: int
+    year: int
+    start_hour: int
+    start_minute: int
+    end_hour: int
+    end_minute: int
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "day": self.day,
+            "month": self.month,
+            "year": self.year,
+            "start_hour": self.start_hour,
+            "start_minute": self.start_minute,
+            "end_hour": self.end_hour,
+            "end_minute": self.end_minute,
+        }
+    
+    def duration_minutes(self) -> int:
+        """Get the duration of this range in minutes."""
+        start = self.start_hour * 60 + self.start_minute
+        end = self.end_hour * 60 + self.end_minute
+        return end - start
+    
+    def format_time_range(self) -> str:
+        """Format the range as a string like '09:00 - 17:00'."""
+        return f"{self.start_hour:02d}:{self.start_minute:02d} - {self.end_hour:02d}:{self.end_minute:02d}"
+    
+    def format_display(self) -> str:
+        """Format for display to user including date."""
+        return f"{self.day}/{self.month}/{self.year} {self.format_time_range()}"
+    
+    def can_fit_duration(self, duration_minutes: int) -> bool:
+        """Check if this range can fit an event of given duration."""
+        return self.duration_minutes() >= duration_minutes
+
+
+@dataclass
 class SessionContext:
     """Session context holding all state data."""
     
@@ -217,6 +263,7 @@ class SessionContext:
     resolution_type: Optional[ResolutionType] = None
     preference_type: Optional[PreferenceType] = None
     suggested_slots: list[TimeSlot] = field(default_factory=list)
+    free_ranges: list[FreeTimeRange] = field(default_factory=list)
     selected_slot: Optional[TimeSlot] = None
     target_event_id: Optional[str] = None  # For edit/remove
     query_type: Optional[str] = None  # day, week, month
@@ -233,6 +280,7 @@ class SessionContext:
         self.resolution_type = None
         self.preference_type = None
         self.suggested_slots = []
+        self.free_ranges = []
         self.selected_slot = None
         self.target_event_id = None
         self.query_type = None
@@ -250,6 +298,7 @@ class SessionContext:
             "resolution_type": self.resolution_type.value if self.resolution_type else None,
             "preference_type": self.preference_type.value if self.preference_type else None,
             "suggested_slots": [s.to_dict() for s in self.suggested_slots],
+            "free_ranges": [r.to_dict() for r in self.free_ranges],
             "selected_slot": self.selected_slot.to_dict() if self.selected_slot else None,
             "target_event_id": self.target_event_id,
             "query_type": self.query_type,
@@ -269,6 +318,7 @@ class SessionContext:
         ctx.resolution_type = ResolutionType(data["resolution_type"]) if data.get("resolution_type") else None
         ctx.preference_type = PreferenceType(data["preference_type"]) if data.get("preference_type") else None
         ctx.suggested_slots = [TimeSlot(**s) for s in data.get("suggested_slots", [])]
+        ctx.free_ranges = [FreeTimeRange(**r) for r in data.get("free_ranges", [])]
         ctx.selected_slot = TimeSlot(**data["selected_slot"]) if data.get("selected_slot") else None
         ctx.target_event_id = data.get("target_event_id")
         ctx.query_type = data.get("query_type")

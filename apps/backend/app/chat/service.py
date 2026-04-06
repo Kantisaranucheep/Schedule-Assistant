@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chat.states import (
     AgentState, IntentType, PreferenceType, ResolutionType,
-    EventData, ConflictInfo, TimeSlot, SessionContext
+    EventData, ConflictInfo, TimeSlot, FreeTimeRange, SessionContext
 )
 from app.chat.schemas import (
     ChatAgentResponse, AgentMessage, ChoiceOption, SessionState,
@@ -89,6 +89,8 @@ class ChatAgentService:
                 response = await self._handle_select_preference_state(session_id, context, request.message)
             elif context.state == AgentState.SELECT_SLOT:
                 response = await self._handle_select_slot_state(session_id, context, request.message)
+            elif context.state == AgentState.SELECT_TIME_IN_RANGE:
+                response = await self._handle_select_time_in_range_state(session_id, context, request.message)
             elif context.state == AgentState.CONFIRM_ACTION:
                 response = await self._handle_confirm_action_state(session_id, context, request.message)
             else:
@@ -801,7 +803,7 @@ class ChatAgentService:
         month: Optional[int] = None,
         year: Optional[int] = None
     ) -> ChatAgentResponse:
-        """Find free time slots on a specific day."""
+        """Find free time ranges on a specific day and let user pick a time."""
         now = datetime.now()
         month = month or now.month
         year = year or now.year
@@ -811,17 +813,20 @@ class ChatAgentService:
         
         existing_events = await self.repo.get_events_on_date(day, month, year)
         
-        free_slots = self.prolog.find_free_slots_on_date(
-            day, month, year, duration, existing_events,
-            max_results=3 + context.slot_offset
+        # Use new range-based finding with past time filtering
+        free_ranges = self.prolog.find_free_ranges_on_date(
+            day, month, year, existing_events,
+            duration_minutes=duration,
+            filter_past_times=True,
+            timezone=self.timezone
         )
         
-        if len(free_slots) <= context.slot_offset:
+        if not free_ranges:
             context.slot_offset = 0
             context.state = AgentState.SELECT_PREFERENCE
             return self._build_response(
                 session_id, context,
-                f"No free slots found on {day}/{month}/{year}. Please try a different day.",
+                f"No free time available on {day}/{month}/{year} for a {duration}-minute event. Please try a different day.",
                 choices=[
                     ChoiceOption(id="same_time", label="1. Same time on different day", value="1"),
                     ChoiceOption(id="specific_day", label="2. Try another day", value="2"),
@@ -830,26 +835,26 @@ class ChatAgentService:
                 timeout=30
             )
         
-        display_slots = free_slots[context.slot_offset:context.slot_offset + 3]
-        context.suggested_slots = [TimeSlot(
-            day=s.day, month=s.month, year=s.year,
-            start_hour=s.start_hour, start_minute=s.start_minute,
-            end_hour=s.end_hour, end_minute=s.end_minute
-        ) for s in display_slots]
+        # Store free ranges in context for validation
+        context.free_ranges = [FreeTimeRange(
+            day=r.day, month=r.month, year=r.year,
+            start_hour=r.start_hour, start_minute=r.start_minute,
+            end_hour=r.end_hour, end_minute=r.end_minute
+        ) for r in free_ranges]
         
-        context.state = AgentState.SELECT_SLOT
+        context.state = AgentState.SELECT_TIME_IN_RANGE
         
-        choices = []
-        for i, slot in enumerate(display_slots):
-            label = f"{i+1}. {slot.start_hour:02d}:{slot.start_minute:02d} - {slot.end_hour:02d}:{slot.end_minute:02d}"
-            choices.append(ChoiceOption(id=f"slot_{i}", label=label, value=str(i+1)))
-        choices.append(ChoiceOption(id="more", label="4. Show more options", value="4"))
+        # Build display message showing free ranges
+        range_lines = []
+        for i, r in enumerate(free_ranges):
+            range_lines.append(f"  {i+1}. {r.format_time_range()} ({r.duration_minutes()} mins available)")
+        
+        ranges_display = "\n".join(range_lines)
         
         return self._build_response(
             session_id, context,
-            f"Available time slots on {day}/{month}/{year}:",
-            choices=choices,
-            timeout=30
+            f"Free time on {day}/{month}/{year}:\n{ranges_display}\n\nPlease type your preferred start time (e.g., \"10:00\" or \"14:30\"):",
+            timeout=60
         )
     
     async def _check_specific_time(
@@ -906,56 +911,84 @@ class ChatAgentService:
         session_id: str,
         context: SessionContext
     ) -> ChatAgentResponse:
-        """Find any free slots in the next 7 days."""
+        """Find any free time ranges in the next 7 days, showing 3 days at a time."""
         event = context.event_data
         duration = (event.end_hour * 60 + event.end_minute) - (event.start_hour * 60 + event.start_minute)
         
         now = datetime.now()
-        all_slots = []
+        all_ranges_by_day = []  # List of (date_tuple, ranges_for_day)
         
-        # Search through next 7 days
-        for i in range(7):
+        # Search through next 14 days and collect free ranges grouped by day
+        for i in range(14):
             check_date = now + timedelta(days=i)
             events = await self.repo.get_events_on_date(
                 check_date.day, check_date.month, check_date.year
             )
             
-            day_slots = self.prolog.find_free_slots_on_date(
+            day_ranges = self.prolog.find_free_ranges_on_date(
                 check_date.day, check_date.month, check_date.year,
-                duration, events, max_results=5
+                events,
+                duration_minutes=duration,
+                filter_past_times=True,
+                timezone=self.timezone
             )
-            all_slots.extend(day_slots)
             
-            if len(all_slots) >= 3 + context.slot_offset:
+            if day_ranges:
+                all_ranges_by_day.append((
+                    (check_date.day, check_date.month, check_date.year),
+                    day_ranges
+                ))
+            
+            # Stop if we have enough days
+            if len(all_ranges_by_day) >= 6 + context.slot_offset:
                 break
         
-        if len(all_slots) <= context.slot_offset:
+        if not all_ranges_by_day:
             context.slot_offset = 0
             return self._build_response(
                 session_id, context,
-                "No free slots found in the next 7 days. Your schedule is quite full!",
+                f"No free time found in the next 14 days for a {duration}-minute event. Your schedule is quite full!",
             )
         
-        display_slots = all_slots[context.slot_offset:context.slot_offset + 3]
-        context.suggested_slots = [TimeSlot(
-            day=s.day, month=s.month, year=s.year,
-            start_hour=s.start_hour, start_minute=s.start_minute,
-            end_hour=s.end_hour, end_minute=s.end_minute
-        ) for s in display_slots]
+        # Apply offset and limit to 3 days
+        if len(all_ranges_by_day) <= context.slot_offset:
+            context.slot_offset = 0  # Reset if offset exceeds available days
         
-        context.state = AgentState.SELECT_SLOT
+        display_days = all_ranges_by_day[context.slot_offset:context.slot_offset + 3]
+        has_more = len(all_ranges_by_day) > context.slot_offset + 3
         
+        # Flatten ranges for storage in context (for validation)
+        all_display_ranges = []
+        for _, ranges in display_days:
+            all_display_ranges.extend(ranges)
+        
+        context.free_ranges = [FreeTimeRange(
+            day=r.day, month=r.month, year=r.year,
+            start_hour=r.start_hour, start_minute=r.start_minute,
+            end_hour=r.end_hour, end_minute=r.end_minute
+        ) for r in all_display_ranges]
+        
+        context.state = AgentState.SELECT_TIME_IN_RANGE
+        
+        # Build display message showing free ranges grouped by day
+        range_lines = []
+        for i, ((day, month, year), ranges) in enumerate(display_days):
+            range_lines.append(f"{i+1}. 📅 {day}/{month}/{year}:")
+            for r in ranges:
+                range_lines.append(f"   • {r.format_time_range()} ({r.duration_minutes()} mins)")
+        
+        ranges_display = "\n".join(range_lines)
+        
+        # Build choices
         choices = []
-        for i, slot in enumerate(display_slots):
-            label = f"{i+1}. {slot.day}/{slot.month} {slot.start_hour:02d}:{slot.start_minute:02d}-{slot.end_hour:02d}:{slot.end_minute:02d}"
-            choices.append(ChoiceOption(id=f"slot_{i}", label=label, value=str(i+1)))
-        choices.append(ChoiceOption(id="more", label="4. Show more options", value="4"))
+        if has_more:
+            choices.append(ChoiceOption(id="more", label="Show more days", value="more"))
         
         return self._build_response(
             session_id, context,
-            "Here are available time slots:",
-            choices=choices,
-            timeout=30
+            f"Available time slots:\n{ranges_display}\n\nType your preferred time (e.g., \"10:00\") or date+time (e.g., \"{display_days[0][0][0]}/{display_days[0][0][1]} 10:00\"):",
+            choices=choices if choices else None,
+            timeout=60
         )
     
     async def _handle_select_slot_state(
@@ -1002,6 +1035,132 @@ class ChatAgentService:
         
         # User selected a slot
         context.selected_slot = context.suggested_slots[choice - 1]
+        context.state = AgentState.CONFIRM_ACTION
+        
+        return await self._show_confirmation(session_id, context)
+    
+    async def _handle_select_time_in_range_state(
+        self,
+        session_id: str,
+        context: SessionContext,
+        message: str
+    ) -> ChatAgentResponse:
+        """Handle SELECT_TIME_IN_RANGE state - user entering a specific time within free ranges."""
+        import re
+        
+        message = message.strip().lower()
+        
+        # Handle "show more" button
+        if message == "more" or message == "show more" or message == "show more days":
+            context.slot_offset += 3
+            return await self._find_any_free_slots(session_id, context)
+        
+        event = context.event_data
+        duration = (event.end_hour * 60 + event.end_minute) - (event.start_hour * 60 + event.start_minute)
+        
+        # Parse the user's time input
+        # Supported formats:
+        # - "10:00" or "10:30" (time only - use first range's date)
+        # - "10/4 14:00" (date and time)
+        # - "10/4/2026 14:00" (full date and time)
+        
+        day = None
+        month = None
+        year = None
+        start_hour = None
+        start_minute = 0
+        
+        # Try to parse date and time: "10/4 14:00" or "10/4/2026 14:00"
+        date_time_match = re.match(r'(\d{1,2})/(\d{1,2})(?:/(\d{4}))?\s+(\d{1,2}):(\d{2})', message)
+        if date_time_match:
+            day = int(date_time_match.group(1))
+            month = int(date_time_match.group(2))
+            year = int(date_time_match.group(3)) if date_time_match.group(3) else datetime.now().year
+            start_hour = int(date_time_match.group(4))
+            start_minute = int(date_time_match.group(5))
+        else:
+            # Try to parse time only: "10:00" or "14:30"
+            time_match = re.match(r'(\d{1,2}):(\d{2})', message)
+            if time_match:
+                start_hour = int(time_match.group(1))
+                start_minute = int(time_match.group(2))
+                # Use the date from the first free range
+                if context.free_ranges:
+                    first_range = context.free_ranges[0]
+                    day = first_range.day
+                    month = first_range.month
+                    year = first_range.year
+            else:
+                # Try hour only: "10" or "14"
+                hour_match = re.match(r'^(\d{1,2})$', message)
+                if hour_match:
+                    start_hour = int(hour_match.group(1))
+                    if context.free_ranges:
+                        first_range = context.free_ranges[0]
+                        day = first_range.day
+                        month = first_range.month
+                        year = first_range.year
+        
+        if start_hour is None or day is None:
+            return self._build_response(
+                session_id, context,
+                "I couldn't understand that time. Please enter a time like \"10:00\" or \"14:30\", or with a date like \"10/4 14:00\".",
+            )
+        
+        # Validate hour and minute
+        if start_hour < 0 or start_hour > 23 or start_minute < 0 or start_minute > 59:
+            return self._build_response(
+                session_id, context,
+                "Please enter a valid time (hour 0-23, minute 0-59).",
+            )
+        
+        # Calculate end time
+        end_minutes = start_hour * 60 + start_minute + duration
+        end_hour = end_minutes // 60
+        end_minute = end_minutes % 60
+        
+        if end_hour >= 24:
+            return self._build_response(
+                session_id, context,
+                f"This event would end after midnight. Please choose an earlier start time.",
+            )
+        
+        # Validate that the time fits within one of the free ranges
+        time_fits = False
+        for r in context.free_ranges:
+            if r.day == day and r.month == month and r.year == year:
+                range_start = r.start_hour * 60 + r.start_minute
+                range_end = r.end_hour * 60 + r.end_minute
+                proposed_start = start_hour * 60 + start_minute
+                proposed_end = proposed_start + duration
+                
+                if proposed_start >= range_start and proposed_end <= range_end:
+                    time_fits = True
+                    break
+        
+        if not time_fits:
+            # Build helpful error message
+            available_on_day = [r for r in context.free_ranges if r.day == day and r.month == month and r.year == year]
+            if available_on_day:
+                ranges_str = ", ".join([r.format_time_range() for r in available_on_day])
+                return self._build_response(
+                    session_id, context,
+                    f"The time {start_hour:02d}:{start_minute:02d} doesn't fit in the available ranges on {day}/{month}/{year}.\n"
+                    f"Available free time: {ranges_str}\n"
+                    f"Please choose a different time that fits within the free ranges.",
+                )
+            else:
+                return self._build_response(
+                    session_id, context,
+                    f"No free time available on {day}/{month}/{year}. Please check the available dates above.",
+                )
+        
+        # Time is valid - set selected slot and proceed to confirmation
+        context.selected_slot = TimeSlot(
+            day=day, month=month, year=year,
+            start_hour=start_hour, start_minute=start_minute,
+            end_hour=end_hour, end_minute=end_minute
+        )
         context.state = AgentState.CONFIRM_ACTION
         
         return await self._show_confirmation(session_id, context)

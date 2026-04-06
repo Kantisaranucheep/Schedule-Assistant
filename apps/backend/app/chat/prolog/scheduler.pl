@@ -17,6 +17,7 @@
 :- module(scheduler, [
     check_conflict/5,
     find_free_slots/7,
+    find_free_ranges/5,
     find_free_days/7,
     time_to_minutes/3,
     minutes_to_time/3,
@@ -178,6 +179,89 @@ find_free_slots(DurationMinutes, Events, MinStartH, MinStartM, MaxEndH, MaxEndM,
     ).
 
 %% ============================================================================
+%% Find Free Time Ranges (Contiguous Free Periods)
+%% ============================================================================
+%%
+%% Instead of returning fixed-duration slots, this returns the actual free
+%% time ranges (gaps between events). Users can then select any start time
+%% within these ranges.
+%%
+%% Algorithm:
+%% 1. Sort events by start time
+%% 2. Find gaps between consecutive events
+%% 3. Include gap before first event and after last event
+
+%% sort_events_by_start(+Events, -SortedEvents)
+%% Sort events by their start time in minutes
+sort_events_by_start(Events, Sorted) :-
+    map_list_to_pairs(event_start_minutes, Events, Pairs),
+    keysort(Pairs, SortedPairs),
+    pairs_values(SortedPairs, Sorted).
+
+%% event_start_minutes(+Event, -Minutes)
+%% Extract start time in minutes from an event
+event_start_minutes(event(_, _, SH, SM, _, _), Minutes) :-
+    time_to_minutes(SH, SM, Minutes).
+
+%% find_free_ranges(+Events, +MinStartH, +MinStartM, +MaxEndH, +MaxEndM, -FreeRanges)
+%% Find all contiguous free time ranges within the given bounds
+%% Returns list of range(StartH, StartM, EndH, EndM)
+%%
+%% Example:
+%% Events: [event(e1, "Meeting", 10, 0, 12, 0), event(e2, "Lunch", 14, 0, 15, 0)]
+%% MinStart: 8:00, MaxEnd: 18:00
+%% Result: [range(8, 0, 10, 0), range(12, 0, 14, 0), range(15, 0, 18, 0)]
+find_free_ranges(Events, MinStartH, MinStartM, MaxEndH, MaxEndM, FreeRanges) :-
+    time_to_minutes(MinStartH, MinStartM, MinStart),
+    time_to_minutes(MaxEndH, MaxEndM, MaxEnd),
+    (Events = [] ->
+        % No events - entire range is free
+        FreeRanges = [range(MinStartH, MinStartM, MaxEndH, MaxEndM)]
+    ;
+        sort_events_by_start(Events, SortedEvents),
+        find_gaps(SortedEvents, MinStart, MaxEnd, GapsInMinutes),
+        convert_gaps_to_ranges(GapsInMinutes, FreeRanges)
+    ).
+
+%% find_gaps(+SortedEvents, +MinStart, +MaxEnd, -Gaps)
+%% Find gaps between events as list of gap(Start, End) in minutes
+find_gaps([], MinStart, MaxEnd, [gap(MinStart, MaxEnd)]) :-
+    MinStart < MaxEnd, !.
+find_gaps([], _, _, []).
+
+find_gaps([Event|Rest], MinStart, MaxEnd, Gaps) :-
+    Event = event(_, _, SH, SM, EH, EM),
+    time_to_minutes(SH, SM, EventStart),
+    time_to_minutes(EH, EM, EventEnd),
+    % Gap before this event?
+    (MinStart < EventStart ->
+        GapEnd is min(EventStart, MaxEnd),
+        (MinStart < GapEnd ->
+            FirstGap = [gap(MinStart, GapEnd)]
+        ;
+            FirstGap = []
+        )
+    ;
+        FirstGap = []
+    ),
+    % Continue from end of this event
+    NewMinStart is max(MinStart, EventEnd),
+    find_gaps(Rest, NewMinStart, MaxEnd, RestGaps),
+    append(FirstGap, RestGaps, Gaps).
+
+%% convert_gaps_to_ranges(+Gaps, -Ranges)
+%% Convert gap(StartMin, EndMin) to range(SH, SM, EH, EM)
+convert_gaps_to_ranges([], []).
+convert_gaps_to_ranges([gap(StartMin, EndMin)|Rest], [range(SH, SM, EH, EM)|RestRanges]) :-
+    StartMin < EndMin,  % Only include non-empty ranges
+    minutes_to_time(StartMin, SH, SM),
+    minutes_to_time(EndMin, EH, EM),
+    convert_gaps_to_ranges(Rest, RestRanges).
+convert_gaps_to_ranges([gap(StartMin, EndMin)|Rest], RestRanges) :-
+    StartMin >= EndMin,  % Skip empty ranges
+    convert_gaps_to_ranges(Rest, RestRanges).
+
+%% ============================================================================
 %% Logical Inference: Find Free Days
 %% ============================================================================
 %%
@@ -223,6 +307,10 @@ check_single_conflict(NH, NM, NEH, NEM, EH, EM, EEH, EEM) :-
 %% ?- check_conflict(9, 0, 10, 0, [event(e1, "Meeting", 9, 30, 10, 30)], C).
 %% C = [conflict(e1, "Meeting", 9, 30, 10, 30)]
 %%
-%% Find free slots:
+%% Find free slots (fixed duration):
 %% ?- find_free_slots(60, [event(e1, "M", 9, 0, 10, 0)], 8, 0, 18, 0, S).
 %% S = [slot(8, 0, 9, 0), slot(10, 0, 11, 0), ...]
+%%
+%% Find free ranges (contiguous periods):
+%% ?- find_free_ranges([event(e1, "Meeting", 10, 0, 12, 0)], 8, 0, 18, 0, R).
+%% R = [range(8, 0, 10, 0), range(12, 0, 18, 0)]
