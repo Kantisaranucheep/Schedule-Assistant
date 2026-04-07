@@ -28,9 +28,8 @@ export function minutesToLabel(mins: number) {
     const h = Math.floor(mins / 60);
     const m = mins % 60;
     const ap = h >= 12 ? "PM" : "AM";
-    let hh = h % 12;
-    if (hh === 0) hh = 12;
-    return `${pad(hh)}:${pad(m)}${ap}`;
+    let hh = h === 0 ? 0 : (h % 12 || 12);
+    return `${hh}:${pad(m)} ${ap}`;
 }
 
 export function timeToMinutes(t: string) {

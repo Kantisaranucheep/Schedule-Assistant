@@ -207,7 +207,7 @@ export default function DayView({
                                     color: "#444"
                                 }}
                             >
-                                {`${String(h).padStart(2, "0")}:00`}
+                                {`${h === 0 ? 0 : (h % 12 || 12)} ${h >= 12 ? "PM" : "AM"}`}
                             </div>
 
                             {/* Minute Grid & Events */}

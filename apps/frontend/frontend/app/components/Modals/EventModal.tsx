@@ -324,403 +324,421 @@ export default function EventModal({
                     </div>
                 </div>
             ) : (
-            <div
-                className="bg-white rounded-4 shadow-lg border border-light-subtle overflow-hidden position-relative d-flex flex-column"
-                style={{ width: "min(720px, 92vw)", maxHeight: "90vh" }}
-            >
-                <button
-                    type="button"
-                    className="btn btn-sm btn-light position-absolute top-0 end-0 m-3 rounded-3 z-1 shadow-sm border"
-                    onClick={onClose}
-                    aria-label="Close"
+                <div
+                    className="bg-white rounded-4 shadow-lg border border-light-subtle overflow-hidden position-relative d-flex flex-column"
+                    style={{ width: "min(720px, 92vw)", maxHeight: "90vh" }}
                 >
-                    ×
-                </button>
+                    <button
+                        type="button"
+                        className="btn btn-sm btn-light position-absolute top-0 end-0 m-3 rounded-3 z-1 shadow-sm border"
+                        onClick={onClose}
+                        aria-label="Close"
+                    >
+                        ×
+                    </button>
 
-                <div className="p-4 bg-light border-bottom border-dashed">
-                    <input
-                        className="form-control form-control-lg fw-bold bg-transparent border-0 shadow-none px-0"
-                        style={{ fontSize: 24 }}
-                        value={mTitle}
-                        onChange={(e) => setMTitle(e.target.value)}
-                        placeholder="Add Title"
-                    />
+                    <div className="p-4 bg-light border-bottom border-dashed">
+                        <input
+                            className="form-control form-control-lg fw-bold bg-transparent border-0 shadow-none px-0"
+                            style={{ fontSize: 24 }}
+                            value={mTitle}
+                            onChange={(e) => setMTitle(e.target.value)}
+                            placeholder="Add Title"
+                        />
 
-                    <div className="d-flex justify-content-center gap-3 mt-3">
-                        <div
-                            className={`btn btn-sm fw-bold rounded-pill px-4 ${modalKind === "event"
-                                ? "btn-white shadow-sm text-dark"
-                                : "btn-light text-secondary border-0"
-                                } ${editingEvent ? "pe-none opacity-75" : ""}`}
-                            onClick={() => !editingEvent && setModalKind("event")}
-                            role="button"
-                            title={editingEvent ? "Cannot change type when editing" : undefined}
-                        >
-                            Event
-                        </div>
-                        <div
-                            className={`btn btn-sm fw-bold rounded-pill px-4 ${modalKind === "task"
-                                ? "btn-white shadow-sm text-dark"
-                                : "btn-light text-secondary border-0"
-                                } ${editingEvent ? "pe-none opacity-75" : ""}`}
-                            onClick={() => !editingEvent && setModalKind("task")}
-                            role="button"
-                            title={editingEvent ? "Cannot change type when editing" : undefined}
-                        >
-                            Task
+                        <div className="d-flex justify-content-center gap-3 mt-3">
+                            <div
+                                className={`btn btn-sm fw-bold rounded-pill px-4 ${modalKind === "event"
+                                    ? "btn-white shadow-sm text-dark"
+                                    : "btn-light text-secondary border-0"
+                                    } ${editingEvent ? "pe-none opacity-75" : ""}`}
+                                onClick={() => !editingEvent && setModalKind("event")}
+                                role="button"
+                                title={editingEvent ? "Cannot change type when editing" : undefined}
+                            >
+                                Event
+                            </div>
+                            <div
+                                className={`btn btn-sm fw-bold rounded-pill px-4 ${modalKind === "task"
+                                    ? "btn-white shadow-sm text-dark"
+                                    : "btn-light text-secondary border-0"
+                                    } ${editingEvent ? "pe-none opacity-75" : ""}`}
+                                onClick={() => !editingEvent && setModalKind("task")}
+                                role="button"
+                                title={editingEvent ? "Cannot change type when editing" : undefined}
+                            >
+                                Task
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <div className="p-4 bg-white/50 overflow-y-auto flex-grow-1" style={{ maxHeight: "calc(90vh - 130px)" }}>
-                    <form onSubmit={saveEvent} className="d-flex flex-column gap-3">
-                        <div className="d-flex gap-3">
-                            <div
-                                className="text-secondary d-flex align-items-center justify-content-center"
-                                style={{ width: 44, height: 44 }}
-                            >
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                    width="24"
-                                    height="24"
+                    <div className="p-4 bg-white/50 overflow-y-auto flex-grow-1" style={{ maxHeight: "calc(90vh - 130px)" }}>
+                        <form onSubmit={saveEvent} className="d-flex flex-column gap-3">
+                            <div className="d-flex gap-3">
+                                <div
+                                    className="text-secondary d-flex align-items-center justify-content-center"
+                                    style={{ width: 44, height: 44 }}
                                 >
-                                    {modalKind === "task" ? (
-                                        <>
-                                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                                            <line x1="16" y1="2" x2="16" y2="6"></line>
-                                            <line x1="8" y1="2" x2="8" y2="6"></line>
-                                            <line x1="3" y1="10" x2="21" y2="10"></line>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <circle cx="12" cy="12" r="9"></circle>
-                                            <path d="M12 7v6l4 2"></path>
-                                        </>
-                                    )}
-                                </svg>
-                            </div>
-
-                            <div className="flex-grow-1 p-3 rounded-4 bg-light border">
-                                <div className="d-flex flex-wrap align-items-center gap-2">
-                                    <span className="badge bg-secondary bg-opacity-10 text-dark fw-bold px-2 py-1">
-                                        {prettyDate}
-                                    </span>
-
-                                    {modalKind === "event" && (
-                                        <>
-                                            <input
-                                                className="form-control form-control-sm border-0 bg-secondary bg-opacity-10 text-dark fw-bold text-center p-1 rounded-2"
-                                                style={{ width: 120 }}
-                                                type="time"
-                                                value={mStart}
-                                                onChange={(e) => handleStartChange(e.target.value)}
-                                                disabled={mAllDay}
-                                                min={
-                                                    mAllDay
-                                                        ? undefined
-                                                        : isTodaySelected
-                                                            ? minStart
-                                                            : "00:00"
-                                                }
-                                            />
-
-                                            <input
-                                                className="form-control form-control-sm border-0 bg-secondary bg-opacity-10 text-dark fw-bold text-center p-1 rounded-2"
-                                                style={{ width: 120 }}
-                                                type="time"
-                                                value={mEnd}
-                                                onChange={(e) => handleEndChange(e.target.value)}
-                                                disabled={mAllDay}
-                                                min={mAllDay ? undefined : mStart}
-                                            />
-
-                                            <div className="form-check form-switch ms-2">
-                                                <input
-                                                    className="form-check-input"
-                                                    type="checkbox"
-                                                    id="mAllDay"
-                                                    checked={mAllDay}
-                                                    onChange={(e) => setMAllDay(e.target.checked)}
-                                                />
-                                                <label
-                                                    className="form-check-label small fw-bold"
-                                                    htmlFor="mAllDay"
-                                                >
-                                                    All Day
-                                                </label>
-                                            </div>
-                                        </>
-                                    )}
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        width="24"
+                                        height="24"
+                                    >
+                                        {modalKind === "task" ? (
+                                            <>
+                                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                                <line x1="16" y1="2" x2="16" y2="6"></line>
+                                                <line x1="8" y1="2" x2="8" y2="6"></line>
+                                                <line x1="3" y1="10" x2="21" y2="10"></line>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <circle cx="12" cy="12" r="9"></circle>
+                                                <path d="M12 7v6l4 2"></path>
+                                            </>
+                                        )}
+                                    </svg>
                                 </div>
 
-                                {modalKind === "event" && conflict && (
-                                    <div className="mt-2 text-danger small fw-bold d-flex align-items-center gap-1">
-                                        ⚠️ Time conflict! Overlaps with &quot;{conflict.title}&quot;
-                                    </div>
-                                )}
-                                {modalKind === "event" && isDurationTooShort && (
-                                    <div className="mt-2 text-warning small fw-bold d-flex align-items-center gap-1">
-                                        ⚠️ Minimum duration is 5 minutes
-                                    </div>
-                                )}
-                                {modalKind === "event" && isPastTime && (
-                                    <div className="mt-2 text-danger small fw-bold d-flex align-items-center gap-1">
-                                        ⚠️ Cannot schedule in the past
-                                    </div>
-                                )}
-                                {modalKind === "event" && isInvalidTime && (
-                                    <div className="mt-2 text-danger small fw-bold d-flex align-items-center gap-1">
-                                        ⚠️ End time must be after start time
-                                    </div>
-                                )}
+                                <div className="flex-grow-1 p-3 rounded-4 bg-light border">
+                                    <div className="d-flex flex-wrap align-items-center gap-2">
+                                        <span className="badge bg-secondary bg-opacity-10 text-dark fw-bold px-2 py-1">
+                                            {prettyDate}
+                                        </span>
 
-                                <input
-                                    className="form-control form-control-sm mt-2 border-0 bg-transparent px-0"
-                                    type="date"
-                                    value={mDate}
-                                    onChange={(e) => handleDateChange(e.target.value)}
-                                    min={realTodayKey}
-                                />
-
-                                {modalKind === "event" && (
-                                    <div className="form-check form-switch mt-3 d-flex align-items-center gap-2 px-0">
-                                        <input
-                                            className="form-check-input m-0 ms-1"
-                                            type="checkbox"
-                                            id="mIsRecurring"
-                                            style={{ transform: "scale(1.2)", cursor: editingEvent ? "not-allowed" : "pointer" }}
-                                            checked={mIsRecurring}
-                                            disabled={!!editingEvent}
-                                            onChange={(e) => setMIsRecurring(e.target.checked)}
-                                        />
-                                        <label className="form-check-label small fw-bold" htmlFor="mIsRecurring" style={{ cursor: "pointer" }}>
-                                            Recurring Event
-                                        </label>
-                                    </div>
-                                )}
-
-                                {modalKind === "event" && mIsRecurring && (
-                                    <div className="mt-3 p-3 bg-white rounded-3 border border-light-subtle d-flex flex-column gap-3 shadow-sm">
-                                        <div>
-                                            <label className="form-label small fw-bold text-secondary mb-1">Ends On</label>
-                                            <input
-                                                className="form-control form-control-sm border-0 bg-secondary bg-opacity-10 text-dark fw-bold rounded-2 px-3 py-2 w-auto"
-                                                type="date"
-                                                value={mRecurEndDate}
-                                                disabled={!!editingEvent}
-                                                onChange={(e) => setMRecurEndDate(e.target.value)}
-                                                min={mDate}
-                                            />
-                                        </div>
-
-                                        <div>
-                                            <label className="form-label small fw-bold text-secondary mb-2">Repeats On</label>
-                                            <div className="d-flex gap-2 flex-wrap">
-                                                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, idx) => {
-                                                    const isSelected = mRecurDays.includes(idx);
-                                                    return (
-                                                        <button
-                                                            key={day}
-                                                            type="button"
-                                                            disabled={!!editingEvent}
-                                                            className={`btn btn-sm rounded-circle fw-bold transition-all ${isSelected ? 'btn-primary shadow-sm text-white' : 'btn-light border border-light-subtle text-secondary'}`}
-                                                            style={{ width: 36, height: 36, padding: 0 }}
-                                                            onClick={() => {
-                                                                if (isSelected) {
-                                                                    setMRecurDays(mRecurDays.filter(d => d !== idx));
-                                                                } else {
-                                                                    setMRecurDays([...mRecurDays, idx]);
-                                                                }
-                                                            }}
-                                                        >
-                                                            {day[0]}
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="d-flex gap-3">
-                            <div
-                                className="text-secondary d-flex align-items-center justify-content-center"
-                                style={{ width: 44, height: 44 }}
-                            >
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                    width="24"
-                                    height="24"
-                                >
-                                    <path d="M12 22s7-6 7-12a7 7 0 1 0-14 0c0 6 7 12 7 12z"></path>
-                                    <circle cx="12" cy="10" r="2"></circle>
-                                </svg>
-                            </div>
-                            <div className="flex-grow-1 p-2 rounded-4 bg-light border">
-                                <input
-                                    className="form-control border-0 bg-transparent shadow-none"
-                                    placeholder="Add Location"
-                                    value={mLocation}
-                                    onChange={(e) => setMLocation(e.target.value)}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="d-flex gap-3">
-                            <div
-                                className="text-secondary d-flex align-items-center justify-content-center"
-                                style={{ width: 44, height: 44 }}
-                            >
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                    width="24"
-                                    height="24"
-                                >
-                                    <path d="M12 20h9"></path>
-                                    <path d="M16.5 3.5a2.1 2.0 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
-                                </svg>
-                            </div>
-                            <div className="flex-grow-1 p-2 rounded-4 bg-light border">
-                                <textarea
-                                    className="form-control border-0 bg-transparent shadow-none"
-                                    placeholder="Add Notes"
-                                    rows={3}
-                                    value={mNotes}
-                                    onChange={(e) => setMNotes(e.target.value)}
-                                    style={{ resize: "vertical", minHeight: 60 }}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="d-flex gap-3">
-                            <div
-                                className="text-secondary d-flex align-items-center justify-content-center"
-                                style={{ width: 44, height: 44 }}
-                            >
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                    width="24"
-                                    height="24"
-                                >
-                                    <path d="M12 22a10 10 0 0 1 0-20"></path>
-                                    <path d="M12 2a10 10 0 1 0 10 10"></path>
-                                    <path d="M12 12l8-4"></path>
-                                </svg>
-                            </div>
-                            <div className="flex-grow-1 p-2 rounded-4 bg-light border">
-                                <div className="d-flex flex-column gap-2 px-2 py-1">
-                                    <span className="small fw-bold text-secondary">Category</span>
-                                    <div className="d-flex gap-2 flex-wrap align-items-center">
-                                        {categories.map((c) => (
-                                            <button
-                                                key={c.id}
-                                                type="button"
-                                                className={`btn btn-sm rounded-pill d-flex align-items-center gap-2 transition-all ${mCategoryId === c.id
-                                                    ? "shadow-sm border-0"
-                                                    : "opacity-75 hover-opacity-100 border bg-light text-secondary"
-                                                    }`}
-                                                style={{
-                                                    fontSize: 12,
-                                                    fontWeight: 600,
-                                                    backgroundColor: mCategoryId === c.id ? `${c.color}20` : undefined,
-                                                    color: mCategoryId === c.id ? c.color : undefined,
-                                                    border: mCategoryId === c.id ? `1px solid ${c.color}` : undefined
-                                                }}
-                                                onClick={() => setMCategoryId(c.id)}
-                                                title={c.name}
-                                            >
-                                                <div
-                                                    className="rounded-circle shadow-sm"
-                                                    style={{
-                                                        width: 12,
-                                                        height: 12,
-                                                        backgroundColor: c.color,
-                                                    }}
+                                        {modalKind === "event" && (
+                                            <>
+                                                <input
+                                                    className="form-control form-control-sm border-0 bg-secondary bg-opacity-10 text-dark fw-bold text-center p-1 rounded-2"
+                                                    style={{ width: 120 }}
+                                                    type="time"
+                                                    value={mStart}
+                                                    onChange={(e) => handleStartChange(e.target.value)}
+                                                    disabled={mAllDay}
+                                                    min={
+                                                        mAllDay
+                                                            ? undefined
+                                                            : isTodaySelected
+                                                                ? minStart
+                                                                : "00:00"
+                                                    }
                                                 />
-                                                {c.name}
-                                            </button>
-                                        ))}
-                                        <button
-                                            type="button"
-                                            className="btn btn-sm btn-light rounded-pill border fw-bold text-secondary text-nowrap"
-                                            onClick={() => setIsAddingCategory(!isAddingCategory)}
-                                        >
-                                            + New Category
-                                        </button>
+
+                                                <input
+                                                    className="form-control form-control-sm border-0 bg-secondary bg-opacity-10 text-dark fw-bold text-center p-1 rounded-2"
+                                                    style={{ width: 120 }}
+                                                    type="time"
+                                                    value={mEnd}
+                                                    onChange={(e) => handleEndChange(e.target.value)}
+                                                    disabled={mAllDay}
+                                                    min={mAllDay ? undefined : mStart}
+                                                />
+
+                                                <div className="form-check form-switch ms-2">
+                                                    <input
+                                                        className="form-check-input"
+                                                        type="checkbox"
+                                                        id="mAllDay"
+                                                        checked={mAllDay}
+                                                        onChange={(e) => setMAllDay(e.target.checked)}
+                                                    />
+                                                    <label
+                                                        className="form-check-label small fw-bold"
+                                                        htmlFor="mAllDay"
+                                                    >
+                                                        All Day
+                                                    </label>
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
 
-                                    {isAddingCategory && (
-                                        <div className="w-100 mt-2 p-3 bg-secondary bg-opacity-10 rounded-3 border shadow-sm">
-                                            <div className="d-flex flex-column gap-2">
-                                                <label className="small fw-bold text-dark">Create Custom Category</label>
-                                                <div className="d-flex gap-2 align-items-center">
-                                                    <input
-                                                        type="text"
-                                                        className="form-control form-control-sm border-0"
-                                                        placeholder="Category Name"
-                                                        value={newCatName}
-                                                        onChange={(e) => setNewCatName(e.target.value)}
-                                                    />
-                                                    <input
-                                                        type="color"
-                                                        className="form-control form-control-sm form-control-color border-0 p-1"
-                                                        value={newCatColor}
-                                                        onChange={(e) => setNewCatColor(e.target.value)}
-                                                        title="Choose your color"
-                                                        style={{ width: 40, cursor: 'pointer' }}
-                                                    />
-                                                    <button
-                                                        type="button"
-                                                        className="btn btn-sm btn-dark fw-bold rounded-pill px-3"
-                                                        disabled={!newCatName.trim()}
-                                                        onClick={() => {
-                                                            const newCat = {
-                                                                id: `cat-${Date.now()}`,
-                                                                name: newCatName.trim(),
-                                                                color: newCatColor
-                                                            };
-                                                            onAddCategory(newCat);
-                                                            setMCategoryId(newCat.id);
-                                                            setIsAddingCategory(false);
-                                                            setNewCatName("");
-                                                        }}
-                                                    >
-                                                        Add
-                                                    </button>
+                                    {modalKind === "event" && conflict && (
+                                        <div className="mt-2 p-2 rounded-3 d-flex align-items-center gap-2 border border-danger-subtle bg-danger bg-opacity-10 text-danger" style={{ fontSize: 11 }}>
+                                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" className="flex-shrink-0">
+                                                <path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                            <span className="fw-bold">Time conflict! Overlaps with &quot;{conflict.title}&quot;</span>
+                                        </div>
+                                    )}
+                                    {modalKind === "event" && isDurationTooShort && (
+                                        <div className="mt-2 p-2 rounded-3 d-flex align-items-center gap-2 border border-danger-subtle bg-danger bg-opacity-10 text-danger" style={{ fontSize: 11 }}>
+                                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" className="flex-shrink-0">
+                                                <circle cx="12" cy="12" r="10" />
+                                                <line x1="12" y1="8" x2="12" y2="12" strokeLinecap="round" strokeLinejoin="round" />
+                                                <line x1="12" y1="16" x2="12.01" y2="16" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                            <span className="fw-bold">Minimum duration is 5 minutes</span>
+                                        </div>
+                                    )}
+                                    {modalKind === "event" && isPastTime && (
+                                        <div className="mt-2 p-2 rounded-3 d-flex align-items-center gap-2 border border-danger-subtle bg-danger bg-opacity-10 text-danger" style={{ fontSize: 11 }}>
+                                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" className="flex-shrink-0">
+                                                <circle cx="12" cy="12" r="10" />
+                                                <line x1="12" y1="8" x2="12" y2="12" strokeLinecap="round" strokeLinejoin="round" />
+                                                <line x1="12" y1="16" x2="12.01" y2="16" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                            <span className="fw-bold">Cannot schedule in the past</span>
+                                        </div>
+                                    )}
+                                    {modalKind === "event" && isInvalidTime && (
+                                        <div className="mt-2 p-2 rounded-3 d-flex align-items-center gap-2 border border-danger-subtle bg-danger bg-opacity-10 text-danger" style={{ fontSize: 11 }}>
+                                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" className="flex-shrink-0">
+                                                <circle cx="12" cy="12" r="10" />
+                                                <line x1="12" y1="8" x2="12" y2="12" strokeLinecap="round" strokeLinejoin="round" />
+                                                <line x1="12" y1="16" x2="12.01" y2="16" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                            <span className="fw-bold">End time must be after start time</span>
+                                        </div>
+                                    )}
+
+                                    <input
+                                        className="form-control form-control-sm mt-2 border-0 bg-transparent px-0"
+                                        type="date"
+                                        value={mDate}
+                                        onChange={(e) => handleDateChange(e.target.value)}
+                                        min={realTodayKey}
+                                    />
+
+                                    {modalKind === "event" && (
+                                        <div className="form-check form-switch mt-3 d-flex align-items-center gap-2 px-0">
+                                            <input
+                                                className="form-check-input m-0 ms-1"
+                                                type="checkbox"
+                                                id="mIsRecurring"
+                                                style={{ transform: "scale(1.2)", cursor: editingEvent ? "not-allowed" : "pointer" }}
+                                                checked={mIsRecurring}
+                                                disabled={!!editingEvent}
+                                                onChange={(e) => setMIsRecurring(e.target.checked)}
+                                            />
+                                            <label className="form-check-label small fw-bold" htmlFor="mIsRecurring" style={{ cursor: "pointer" }}>
+                                                Recurring Event
+                                            </label>
+                                        </div>
+                                    )}
+
+                                    {modalKind === "event" && mIsRecurring && (
+                                        <div className="mt-3 p-3 bg-white rounded-3 border border-light-subtle d-flex flex-column gap-3 shadow-sm">
+                                            <div>
+                                                <label className="form-label small fw-bold text-secondary mb-1">Ends On</label>
+                                                <input
+                                                    className="form-control form-control-sm border-0 bg-secondary bg-opacity-10 text-dark fw-bold rounded-2 px-3 py-2 w-auto"
+                                                    type="date"
+                                                    value={mRecurEndDate}
+                                                    disabled={!!editingEvent}
+                                                    onChange={(e) => setMRecurEndDate(e.target.value)}
+                                                    min={mDate}
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="form-label small fw-bold text-secondary mb-2">Repeats On</label>
+                                                <div className="d-flex gap-2 flex-wrap">
+                                                    {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, idx) => {
+                                                        const isSelected = mRecurDays.includes(idx);
+                                                        return (
+                                                            <button
+                                                                key={day}
+                                                                type="button"
+                                                                disabled={!!editingEvent}
+                                                                className={`btn btn-sm rounded-circle fw-bold transition-all ${isSelected ? 'btn-primary shadow-sm text-white' : 'btn-light border border-light-subtle text-secondary'}`}
+                                                                style={{ width: 36, height: 36, padding: 0 }}
+                                                                onClick={() => {
+                                                                    if (isSelected) {
+                                                                        setMRecurDays(mRecurDays.filter(d => d !== idx));
+                                                                    } else {
+                                                                        setMRecurDays([...mRecurDays, idx]);
+                                                                    }
+                                                                }}
+                                                            >
+                                                                {day[0]}
+                                                            </button>
+                                                        );
+                                                    })}
                                                 </div>
                                             </div>
                                         </div>
                                     )}
                                 </div>
                             </div>
-                        </div>
 
-                        <div className="d-flex justify-content-end pt-3">
-                            <button
-                                className="btn btn-primary rounded-pill px-5 fw-bold shadow"
-                                type="submit"
-                                disabled={!canSave}
-                            >
-                                {editingEvent ? "Update" : "Save"}
-                            </button>
-                        </div>
-                    </form>
+                            <div className="d-flex gap-3">
+                                <div
+                                    className="text-secondary d-flex align-items-center justify-content-center"
+                                    style={{ width: 44, height: 44 }}
+                                >
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        width="24"
+                                        height="24"
+                                    >
+                                        <path d="M12 22s7-6 7-12a7 7 0 1 0-14 0c0 6 7 12 7 12z"></path>
+                                        <circle cx="12" cy="10" r="2"></circle>
+                                    </svg>
+                                </div>
+                                <div className="flex-grow-1 p-2 rounded-4 bg-light border">
+                                    <input
+                                        className="form-control border-0 bg-transparent shadow-none"
+                                        placeholder="Add Location"
+                                        value={mLocation}
+                                        onChange={(e) => setMLocation(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="d-flex gap-3">
+                                <div
+                                    className="text-secondary d-flex align-items-center justify-content-center"
+                                    style={{ width: 44, height: 44 }}
+                                >
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        width="24"
+                                        height="24"
+                                    >
+                                        <path d="M12 20h9"></path>
+                                        <path d="M16.5 3.5a2.1 2.0 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+                                    </svg>
+                                </div>
+                                <div className="flex-grow-1 p-2 rounded-4 bg-light border">
+                                    <textarea
+                                        className="form-control border-0 bg-transparent shadow-none"
+                                        placeholder="Add Notes"
+                                        rows={3}
+                                        value={mNotes}
+                                        onChange={(e) => setMNotes(e.target.value)}
+                                        style={{ resize: "vertical", minHeight: 60 }}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="d-flex gap-3">
+                                <div
+                                    className="text-secondary d-flex align-items-center justify-content-center"
+                                    style={{ width: 44, height: 44 }}
+                                >
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        width="24"
+                                        height="24"
+                                    >
+                                        <path d="M12 22a10 10 0 0 1 0-20"></path>
+                                        <path d="M12 2a10 10 0 1 0 10 10"></path>
+                                        <path d="M12 12l8-4"></path>
+                                    </svg>
+                                </div>
+                                <div className="flex-grow-1 p-2 rounded-4 bg-light border" style={{ minWidth: 0, width: 610, maxWidth: 610, flexBasis: 610, overflow: "hidden" }}>
+                                    <div className="d-flex flex-column gap-2 py-1 ps-2">
+                                        <span className="small fw-bold text-secondary">Category</span>
+                                        <div className="d-flex gap-2 flex-wrap align-items-center">
+                                            {categories.map((c) => (
+                                                <button
+                                                    key={c.id}
+                                                    type="button"
+                                                    className={`btn btn-sm rounded-pill d-flex align-items-center gap-2 transition-all ${mCategoryId === c.id
+                                                        ? "shadow-sm border-0"
+                                                        : "opacity-75 hover-opacity-100 border bg-light text-secondary"
+                                                        }`}
+                                                    style={{
+                                                        fontSize: 12,
+                                                        fontWeight: 600,
+                                                        backgroundColor: mCategoryId === c.id ? `${c.color}20` : undefined,
+                                                        color: mCategoryId === c.id ? c.color : undefined,
+                                                        border: mCategoryId === c.id ? `1px solid ${c.color}` : undefined
+                                                    }}
+                                                    onClick={() => setMCategoryId(c.id)}
+                                                    title={c.name}
+                                                >
+                                                    <div
+                                                        className="rounded-circle shadow-sm"
+                                                        style={{
+                                                            width: 12,
+                                                            height: 12,
+                                                            backgroundColor: c.color,
+                                                        }}
+                                                    />
+                                                    {c.name}
+                                                </button>
+                                            ))}
+                                            <button
+                                                type="button"
+                                                className="btn btn-sm btn-light rounded-pill border fw-bold text-secondary text-nowrap"
+                                                onClick={() => setIsAddingCategory(!isAddingCategory)}
+                                            >
+                                                + New Category
+                                            </button>
+                                        </div>
+
+                                        {isAddingCategory && (
+                                            <div className="w-100 mt-2 p-3 bg-secondary bg-opacity-10 rounded-3 border shadow-sm">
+                                                <div className="d-flex flex-column gap-2">
+                                                    <label className="small fw-bold text-dark">Create Custom Category</label>
+                                                    <div className="d-flex gap-2 align-items-center">
+                                                        <input
+                                                            type="text"
+                                                            className="form-control form-control-sm border-0"
+                                                            placeholder="Category Name"
+                                                            value={newCatName}
+                                                            onChange={(e) => setNewCatName(e.target.value)}
+                                                        />
+                                                        <input
+                                                            type="color"
+                                                            className="form-control form-control-sm form-control-color border-0 p-1"
+                                                            value={newCatColor}
+                                                            onChange={(e) => setNewCatColor(e.target.value)}
+                                                            title="Choose your color"
+                                                            style={{ width: 40, cursor: 'pointer' }}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-sm btn-dark fw-bold rounded-pill px-3"
+                                                            disabled={!newCatName.trim()}
+                                                            onClick={() => {
+                                                                const newCat = {
+                                                                    id: `cat-${Date.now()}`,
+                                                                    name: newCatName.trim(),
+                                                                    color: newCatColor
+                                                                };
+                                                                onAddCategory(newCat);
+                                                                setMCategoryId(newCat.id);
+                                                                setIsAddingCategory(false);
+                                                                setNewCatName("");
+                                                            }}
+                                                        >
+                                                            Add
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="d-flex justify-content-end pt-3">
+                                <button
+                                    className="btn btn-primary rounded-pill px-5 fw-bold shadow"
+                                    type="submit"
+                                    disabled={!canSave}
+                                >
+                                    {editingEvent ? "Update" : "Save"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
-            </div>
             )}
         </div>
     );
