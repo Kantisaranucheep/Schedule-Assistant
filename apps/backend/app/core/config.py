@@ -1,7 +1,7 @@
 """Application configuration from environment variables."""
 
 from functools import lru_cache
-from typing import List
+from typing import List, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -41,6 +41,17 @@ class Settings(BaseSettings):
     # Ollama LLM Configuration
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.2"
+
+    # SMTP Email Configuration for Notifications
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_from_email: Optional[str] = None
+    smtp_from_name: str = "Schedule Assistant"
+    
+    # Notification Settings
+    notification_check_interval_seconds: int = 60  # How often to check for notifications
 
 
 @lru_cache

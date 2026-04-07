@@ -22,6 +22,8 @@ from app.routers import (
 )
 # Import new chat router (replaces old agent/chat system)
 from app.chat.router import router as chat_agent_router
+# Import notification scheduler
+from app.services import start_notification_scheduler, stop_notification_scheduler, get_email_service
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -38,8 +40,20 @@ async def lifespan(app: FastAPI):
     # Startup: create tables if they don't exist
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    
+    # Start notification scheduler
+    email_service = get_email_service()
+    if email_service.is_configured():
+        start_notification_scheduler()
+        logger.info("📧 Email notification scheduler started")
+    else:
+        error_msg = email_service.get_config_error_message()
+        logger.warning(f"📧 {error_msg}")
+    
     yield
-    # Shutdown: dispose engine
+    
+    # Shutdown: stop scheduler and dispose engine
+    stop_notification_scheduler()
     await engine.dispose()
 
 

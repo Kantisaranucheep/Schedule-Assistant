@@ -25,6 +25,7 @@ pyswip>=0.2.11
 # Utilities
 python-dotenv>=1.0.0,<2.0.0
 gtts>=2.5.0,<3.0.0
+apscheduler>=3.10.0,<4.0.0
 
 # Development
 pytest>=7.4.0,<8.0.0

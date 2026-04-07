@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from "react";
+import { sendTestEmail } from "../../services/settings.api";
+
+const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 interface EmailModalProps {
     isOpen: boolean;
@@ -15,11 +18,14 @@ export default function EmailModal({
 }: EmailModalProps) {
     const [localEmail, setLocalEmail] = useState(email);
     const [error, setError] = useState("");
+    const [testLoading, setTestLoading] = useState(false);
+    const [testMessage, setTestMessage] = useState("");
 
     useEffect(() => {
         if (isOpen) {
             setLocalEmail(email);
             setError("");
+            setTestMessage("");
         }
     }, [isOpen, email]);
 
@@ -32,9 +38,41 @@ export default function EmailModal({
             setError("Please enter a valid email address");
             return;
         }
-        
+
         onUpdateEmail(localEmail);
         onClose();
+    };
+
+    const handleTestEmail = async () => {
+        // Validate email first
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!localEmail) {
+            setError("Please enter an email address");
+            return;
+        }
+        if (!emailRegex.test(localEmail)) {
+            setError("Please enter a valid email address");
+            return;
+        }
+
+        setTestLoading(true);
+        setError("");
+        setTestMessage("");
+
+        try {
+            const result = await sendTestEmail(DEFAULT_USER_ID);
+
+            if (!result.success) {
+                setError(result.error || "Failed to send test email");
+            } else {
+                setTestMessage(`✅ Test email sent successfully to ${localEmail}!`);
+            }
+        } catch (err) {
+            setError("Failed to send test email. Please try again.");
+            console.error("Test email error:", err);
+        } finally {
+            setTestLoading(false);
+        }
     };
 
     return (
@@ -85,8 +123,8 @@ export default function EmailModal({
                             </svg>
                             <span className="small text-white-50 fw-bold">Email Address</span>
                         </div>
-                        <input 
-                            type="email" 
+                        <input
+                            type="email"
                             className="form-control bg-transparent border-0 text-white p-0 shadow-none"
                             placeholder="name@example.com"
                             autoFocus
@@ -94,23 +132,44 @@ export default function EmailModal({
                             onChange={(e) => {
                                 setLocalEmail(e.target.value);
                                 if (error) setError("");
+                                if (testMessage) setTestMessage("");
                             }}
                             onKeyDown={(e) => e.key === 'Enter' && handleSave()}
                         />
                     </div>
-                    
+
                     {error && (
-                        <div className="text-danger small px-2">
-                            {error}
+                        <div className="bg-danger bg-opacity-10 border border-danger rounded-3 p-3">
+                            <div className="text-danger small">
+                                <strong>Error:</strong><br/>
+                                <div style={{ fontSize: "11px", fontFamily: "monospace", marginTop: "8px", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                                    {error}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {testMessage && (
+                        <div className="text-success small px-2">
+                            {testMessage}
                         </div>
                     )}
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 pt-0">
+                <div className="p-4 pt-0 d-flex gap-2">
                     <button
                         type="button"
-                        className="btn btn-primary w-100 rounded-pill py-2 fw-bold shadow-sm"
+                        className="btn btn-outline-light rounded-pill py-2 fw-bold shadow-sm flex-grow-1"
+                        onClick={handleTestEmail}
+                        disabled={testLoading || !localEmail}
+                        style={{ opacity: testLoading ? 0.6 : 1 }}
+                    >
+                        {testLoading ? "Sending..." : "📧 Test Email"}
+                    </button>
+                    <button
+                        type="button"
+                        className="btn btn-primary flex-grow-1 rounded-pill py-2 fw-bold shadow-sm"
                         onClick={handleSave}
                         style={{ background: "#5a4ad1", borderColor: "#5a4ad1" }}
                     >

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import "./SmartScheduler.css";
 import {
@@ -9,6 +9,7 @@ import {
   FilterCriteria,
   EventCategory,
   NotificationSettings,
+  NotificationTimePreference,
 } from "./types";
 import {
   monthNames,
@@ -19,6 +20,7 @@ import {
   parseISODate,
 } from "./utils";
 import { deleteEvent, deleteTask } from "./services/events.api";
+import { fetchUserSettings, saveUserSettings } from "./services/settings.api";
 
 import Sidebar from "./components/Sidebar";
 import MonthNavigation from "./components/MonthNavigation";
@@ -30,6 +32,9 @@ import EmailModal from "./components/Modals/EmailModal";
 import EventModal from "./components/Modals/EventModal";
 import ViewEventModal from "./components/Modals/ViewEventModal";
 import { useEvents } from "./hooks/useEvents";
+
+// Default user ID (matches backend)
+const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 export default function Home() {
   const router = useRouter();
@@ -90,12 +95,58 @@ export default function Home() {
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>({
     windowEnabled: true,
     emailEnabled: false,
+    notificationTimes: [],
   });
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [userEmail, setUserEmail] = useState("");
   const [eventModalOpen, setEventModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<{ event: Ev; dateKey: string } | null>(null);
   const [viewingEvent, setViewingEvent] = useState<{ event: Ev; dateKey: string } | null>(null);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+
+  // Load settings from backend on mount
+  useEffect(() => {
+    async function loadSettings() {
+      const settings = await fetchUserSettings(DEFAULT_USER_ID);
+      if (settings) {
+        setNotificationSettings({
+          windowEnabled: settings.window_notifications_enabled,
+          emailEnabled: settings.notifications_enabled,
+          notificationTimes: settings.notification_times || [],
+        });
+        setUserEmail(settings.notification_email || "");
+      }
+      setSettingsLoaded(true);
+    }
+    loadSettings();
+  }, []);
+
+  // Save settings to backend when they change
+  const saveSettingsToBackend = useCallback(async (
+    newSettings: NotificationSettings,
+    email: string
+  ) => {
+    if (!settingsLoaded) return; // Don't save during initial load
+    
+    await saveUserSettings(DEFAULT_USER_ID, {
+      notifications_enabled: newSettings.emailEnabled,
+      window_notifications_enabled: newSettings.windowEnabled,
+      notification_email: email || null,
+      notification_times: newSettings.notificationTimes,
+    });
+  }, [settingsLoaded]);
+
+  // Handle notification settings update
+  const handleUpdateNotificationSettings = useCallback((newSettings: NotificationSettings) => {
+    setNotificationSettings(newSettings);
+    saveSettingsToBackend(newSettings, userEmail);
+  }, [userEmail, saveSettingsToBackend]);
+
+  // Handle email update
+  const handleUpdateEmail = useCallback((email: string) => {
+    setUserEmail(email);
+    saveSettingsToBackend(notificationSettings, email);
+  }, [notificationSettings, saveSettingsToBackend]);
 
   // ===== Filters =====
   const [filters, setFilters] = useState<FilterCriteria>({
@@ -486,7 +537,12 @@ export default function Home() {
             isOpen={notificationsOpen}
             onClose={() => setNotificationsOpen(false)}
             settings={notificationSettings}
-            onUpdateSettings={setNotificationSettings}
+            onUpdateSettings={handleUpdateNotificationSettings}
+            userEmail={userEmail}
+            onEmailClick={() => {
+              setNotificationsOpen(false);
+              setEmailModalOpen(true);
+            }}
           />
 
           {/* ===== EMAIL SETTINGS OVERLAY ===== */}
@@ -494,7 +550,7 @@ export default function Home() {
             isOpen={emailModalOpen}
             onClose={() => setEmailModalOpen(false)}
             email={userEmail}
-            onUpdateEmail={setUserEmail}
+            onUpdateEmail={handleUpdateEmail}
           />
 
           {/* ===== EVENT MODAL ===== */}
