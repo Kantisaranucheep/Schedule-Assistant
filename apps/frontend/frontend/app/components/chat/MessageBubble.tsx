@@ -21,18 +21,19 @@ export default function MessageBubble({
   const choices = typeof message === "string" ? undefined : message.choices;
 
   return (
-    <div className={`d-flex ${isUser ? "justify-content-end" : "justify-content-start"} mb-3`}>
+    <div className={`d-flex ${isUser ? "justify-content-end" : "justify-content-start"} mb-4`}>
       <div
-        className={`px-3 py-2 shadow-sm ${
+        className={`px-4 py-3 shadow-sm ${
           isUser
             ? "bg-primary text-white"
-            : "bg-light text-dark"
+            : "bg-white text-dark border"
         }`}
         style={{
           maxWidth: "80%",
           borderRadius: isUser 
-            ? "1rem 1rem 0 1rem" 
-            : "1rem 1rem 1rem 0",
+            ? "20px 20px 4px 20px" 
+            : "20px 20px 20px 40px",
+          borderColor: isUser ? "transparent" : "#e9ecef"
         }}
       >
         {/* Message text with line breaks */}
@@ -56,7 +57,7 @@ export default function MessageBubble({
                 key={choice.id}
                 onClick={() => onChoiceClick?.(choice)}
                 className="btn btn-outline-primary btn-sm text-start w-100"
-                style={{ 
+                style={{
                   borderRadius: "0.5rem",
                   fontSize: "0.8125rem",
                 }}

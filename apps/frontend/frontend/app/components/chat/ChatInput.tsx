@@ -33,27 +33,29 @@ export default function ChatInput({
   };
 
   return (
-    <div className="border-top bg-white p-3">
-      <div className="d-flex align-items-end gap-2">
+    <div className="border-top p-3" style={{ backgroundColor: "#ffffff" }}>
+      <div className="d-flex align-items-end gap-3 px-1">
         {/* Terminate button */}
         <button
           onClick={onTerminate}
-          className="btn btn-outline-danger btn-sm flex-shrink-0"
-          title="Cancel and discard conversation"
-          style={{ width: "38px", height: "38px" }}
+          className="btn btn-light border flex-shrink-0 d-flex align-items-center justify-content-center hover-lift transition-all"
+          title="Terminate Session"
+          aria-label="Terminate Session"
+          style={{ width: "44px", height: "44px", borderRadius: "12px", color: "#dc3545" }}
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 20 20"
-            fill="currentColor"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           >
-            <path
-              fillRule="evenodd"
-              d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-              clipRule="evenodd"
-            />
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
         </button>
 
@@ -69,10 +71,15 @@ export default function ChatInput({
             className="form-control"
             style={{ 
               maxHeight: "120px", 
-              minHeight: "38px", 
+              minHeight: "44px", 
               resize: "none",
-              borderRadius: "0.75rem",
-              fontSize: "0.875rem",
+              borderRadius: "12px",
+              fontSize: "0.9375rem",
+              paddingTop: "10px",
+              paddingBottom: "10px",
+              boxShadow: "none",
+              backgroundColor: "#f8f9fa",
+              border: "1px solid #e9ecef"
             }}
           />
         </div>
@@ -81,24 +88,26 @@ export default function ChatInput({
         <button
           onClick={handleSend}
           disabled={disabled || !input.trim()}
-          className="btn btn-primary flex-shrink-0"
-          style={{ width: "38px", height: "38px", borderRadius: "0.75rem" }}
+          title="Send Message"
+          aria-label="Send Message"
+          className="btn btn-primary flex-shrink-0 d-flex align-items-center justify-content-center hover-lift transition-all"
+          style={{ width: "44px", height: "44px", borderRadius: "12px", border: "none", boxShadow: "0 4px 12px rgba(13, 110, 253, 0.2)" }}
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 20 20"
-            fill="currentColor"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           >
-            <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+            <polyline points="9 18 15 12 9 6"></polyline>
           </svg>
         </button>
       </div>
-
-      <p className="mt-2 text-muted text-center small mb-0">
-        Press Enter to send, Shift+Enter for new line
-      </p>
     </div>
   );
 }
