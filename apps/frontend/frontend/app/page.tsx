@@ -8,6 +8,7 @@ import {
   EventMap,
   FilterCriteria,
   EventCategory,
+  NotificationSettings,
 } from "./types";
 import {
   monthNames,
@@ -24,7 +25,8 @@ import MonthNavigation from "./components/MonthNavigation";
 import FilterBar from "./components/FilterBar";
 import MonthGrid from "./components/MonthGrid";
 import DayView from "./components/DayView";
-import HotkeysModal from "./components/Modals/HotkeysModal";
+import NotificationModal from "./components/Modals/NotificationModal";
+import EmailModal from "./components/Modals/EmailModal";
 import EventModal from "./components/Modals/EventModal";
 import ViewEventModal from "./components/Modals/ViewEventModal";
 import { useEvents } from "./hooks/useEvents";
@@ -84,7 +86,13 @@ export default function Home() {
   );
 
   // ===== Modals visibility =====
-  const [hotkeysOpen, setHotkeysOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>({
+    windowEnabled: true,
+    emailEnabled: false,
+  });
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [userEmail, setUserEmail] = useState("");
   const [eventModalOpen, setEventModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<{ event: Ev; dateKey: string } | null>(null);
   const [viewingEvent, setViewingEvent] = useState<{ event: Ev; dateKey: string } | null>(null);
@@ -142,7 +150,8 @@ export default function Home() {
         setEventModalOpen(false);
         setEditingEvent(null);
         setViewingEvent(null);
-        setHotkeysOpen(false);
+        setNotificationsOpen(false);
+        setEmailModalOpen(false);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -378,9 +387,9 @@ export default function Home() {
         {/* SIDEBAR */}
         <Sidebar
           filteredEvents={filteredEvents}
-          onHotkeysClick={() => setHotkeysOpen(true)}
+          onNotificationsClick={() => setNotificationsOpen(true)}
           onChatClick={() => router.push('/chat')}
-          onProfileClick={() => { }}
+          onProfileClick={() => setEmailModalOpen(true)}
           onLogoClick={goToToday}
           onEventClick={(dateKey) => {
             setSelectedDay(dateKey);
@@ -472,8 +481,21 @@ export default function Home() {
             />
           )}
 
-          {/* ===== HOTKEYS OVERLAY ===== */}
-          <HotkeysModal isOpen={hotkeysOpen} onClose={() => setHotkeysOpen(false)} />
+          {/* ===== NOTIFICATION SETTINGS OVERLAY ===== */}
+          <NotificationModal
+            isOpen={notificationsOpen}
+            onClose={() => setNotificationsOpen(false)}
+            settings={notificationSettings}
+            onUpdateSettings={setNotificationSettings}
+          />
+
+          {/* ===== EMAIL SETTINGS OVERLAY ===== */}
+          <EmailModal 
+            isOpen={emailModalOpen}
+            onClose={() => setEmailModalOpen(false)}
+            email={userEmail}
+            onUpdateEmail={setUserEmail}
+          />
 
           {/* ===== EVENT MODAL ===== */}
           <EventModal

@@ -48,3 +48,8 @@ export type FilterCriteria = {
     toDate: string;
     selectedCategories: string[];
 };
+
+export type NotificationSettings = {
+    windowEnabled: boolean;
+    emailEnabled: boolean;
+};
