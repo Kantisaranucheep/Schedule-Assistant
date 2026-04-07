@@ -3,7 +3,6 @@
 
 import json
 import re
-from datetime import datetime
 from typing import Any, Dict, Optional
 
 from pydantic import ValidationError
@@ -21,6 +20,7 @@ from app.agent.prompts.intent_parser import (
     INTENT_SCHEMA_DESCRIPTION,
 )
 from app.agent.schemas import Intent, IntentType, ParseRequest, ParseResponse
+from app.core.timezone import now, get_system_timezone
 
 
 class IntentParser:
@@ -56,7 +56,7 @@ class IntentParser:
             )
 
             user_prompt = INTENT_PARSER_USER_TEMPLATE.format(
-                current_datetime=datetime.now().strftime("%Y-%m-%d %H:%M"),
+                current_datetime=now().strftime("%Y-%m-%d %H:%M"),
                 timezone=timezone,
                 user_text=request.text,
             )

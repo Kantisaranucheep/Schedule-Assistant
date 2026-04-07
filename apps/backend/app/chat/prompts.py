@@ -6,13 +6,13 @@ Each state has a specific prompt that tells the LLM what to extract from user in
 The LLM only converts natural language to structured JSON - it does NOT generate responses.
 """
 
-from datetime import datetime
+from app.core.timezone import now as tz_now
 
 
 def get_current_date_context() -> str:
     """Get current date for context in prompts."""
-    now = datetime.now()
-    return f"Today is {now.strftime('%A, %B %d, %Y')} (day={now.day}, month={now.month}, year={now.year})."
+    current = tz_now()
+    return f"Today is {current.strftime('%A, %B %d, %Y')} (day={current.day}, month={current.month}, year={current.year})."
 
 
 # =============================================================================
@@ -483,9 +483,9 @@ Now determine what the user wants to change:
 
 def build_intent_prompt(user_message: str) -> str:
     """Build the intent parsing prompt with current date context."""
-    now = datetime.now()
     from datetime import timedelta
     
+    now = tz_now()
     tomorrow = now + timedelta(days=1)
     
     # Calculate next Monday
@@ -537,9 +537,9 @@ def build_yes_no_prompt(user_message: str) -> str:
 
 def build_preference_prompt(user_message: str) -> str:
     """Build the preference parsing prompt with date context."""
-    now = datetime.now()
     from datetime import timedelta
     
+    now = tz_now()
     # Calculate next Monday and Tuesday
     days_until_monday = (7 - now.weekday()) % 7
     if days_until_monday == 0:
@@ -567,9 +567,9 @@ def build_slot_selection_prompt(user_message: str) -> str:
 
 def build_field_collection_prompt(field_name: str, user_message: str) -> str:
     """Build the field collection prompt."""
-    now = datetime.now()
     from datetime import timedelta
     
+    now = tz_now()
     tomorrow = now + timedelta(days=1)
     days_until_monday = (7 - now.weekday()) % 7
     if days_until_monday == 0:
@@ -597,9 +597,9 @@ def build_confirmation_prompt(user_message: str) -> str:
 
 def build_edit_field_prompt(user_message: str) -> str:
     """Build the edit field parsing prompt with date context."""
-    now = datetime.now()
     from datetime import timedelta
     
+    now = tz_now()
     tomorrow = now + timedelta(days=1)
     
     prompt = EDIT_FIELD_PARSE_PROMPT.format(

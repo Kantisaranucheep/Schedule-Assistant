@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.timezone import now as tz_now
 from app.schemas.chat import ChatRequest, ChatResponse, IntentData, ActionResult, ChatSessionResponse, ChatMessageResponse
 from app.services import ChatService, EventService
 from app.agent import IntentParser, IntentExecutor, ParseRequest, ExecuteRequest, IntentType
@@ -144,7 +145,7 @@ async def _handle_create_event(
     
     try:
         # Parse datetime from intent data
-        date = data.get("date", datetime.now().strftime("%Y-%m-%d"))
+        date = data.get("date", tz_now().strftime("%Y-%m-%d"))
         start_time = data.get("start_time", "09:00")
         end_time = data.get("end_time", "10:00")
         
@@ -289,7 +290,7 @@ async def _handle_move_event(
             tz = ZoneInfo("Asia/Bangkok")
         
         # Parse new timing
-        new_date = data.get("new_date", datetime.now().strftime("%Y-%m-%d"))
+        new_date = data.get("new_date", tz_now().strftime("%Y-%m-%d"))
         new_start = data.get("new_start_time", "09:00")
         new_end = data.get("new_end_time", "10:00")
         
@@ -346,8 +347,8 @@ async def _handle_find_free_slots(
         
         # Parse date range
         date_range = data.get("date_range", {})
-        start_date_str = date_range.get("start_date", datetime.now().strftime("%Y-%m-%d"))
-        end_date_str = date_range.get("end_date", datetime.now().strftime("%Y-%m-%d"))
+        start_date_str = date_range.get("start_date", tz_now().strftime("%Y-%m-%d"))
+        end_date_str = date_range.get("end_date", tz_now().strftime("%Y-%m-%d"))
         
         start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
         end_date = datetime.strptime(end_date_str, "%Y-%m-%d")

@@ -1,5 +1,6 @@
 """FastAPI application entry point."""
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -7,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.core.database import engine, Base
+from app.core.timezone import get_system_timezone_name, SYSTEM_TIMEZONE
 # Import models to register with Base.metadata
 from app.models import User, UserSettings, Calendar, EventType, Category, Event, Task, ChatSession, ChatMessage
 from app.routers import (
@@ -21,10 +23,18 @@ from app.routers import (
 # Import new chat router (replaces old agent/chat system)
 from app.chat.router import router as chat_agent_router
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan - startup and shutdown."""
+    # Log timezone info at startup
+    logger.info(f"🕐 System timezone detected: {get_system_timezone_name()}")
+    logger.info(f"📅 Default timezone set to: {settings.default_timezone}")
+    
     # Startup: create tables if they don't exist
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

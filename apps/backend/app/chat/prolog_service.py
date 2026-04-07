@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from app.core.timezone import now as tz_now, get_system_timezone
+
 # Try to import pyswip - it requires SWI-Prolog to be installed
 try:
     from pyswip import Prolog
@@ -410,8 +412,8 @@ class PrologService:
             tz = ZoneInfo(timezone)
             now = datetime.now(tz)
         except Exception:
-            # Fallback to local time if timezone is invalid
-            now = datetime.now()
+            # Fallback to system timezone if specified timezone is invalid
+            now = tz_now()
         
         is_today = (day == now.day and month == now.month and year == now.year)
         

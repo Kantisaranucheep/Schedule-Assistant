@@ -12,7 +12,7 @@ The agent generates fixed-format responses (not LLM-generated text).
 """
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass, field
 
@@ -29,6 +29,7 @@ from app.chat.schemas import (
 from app.chat.llm_service import LLMService
 from app.chat.prolog_service import get_prolog_service, PrologService
 from app.chat.event_repository import EventRepository
+from app.core.timezone import now as tz_now
 
 
 # In-memory session storage (for simplicity - not persistent)
@@ -223,7 +224,7 @@ class ChatAgentService:
         missing_fields = data.get("missing_fields", [])
         
         # Fill in defaults for missing month/year
-        now = datetime.now()
+        now = tz_now()
         if event_data.get("month") is None:
             event_data["month"] = now.month
         if event_data.get("year") is None:
@@ -341,7 +342,7 @@ class ChatAgentService:
         # No day specified - ask user which day
         context.state = AgentState.SELECT_EVENT_DAY
         
-        now = datetime.now()
+        now = tz_now()
         tomorrow = now + timedelta(days=1)
         
         return self._build_response(
@@ -364,7 +365,7 @@ class ChatAgentService:
         year: Optional[int] = None
     ) -> ChatAgentResponse:
         """Show events on a specific day for user to select."""
-        now = datetime.now()
+        now = tz_now()
         month = month or now.month
         year = year or now.year
         
@@ -428,7 +429,7 @@ class ChatAgentService:
         event_data = data.get("event", {})
         
         # Find the event
-        now = datetime.now()
+        now = tz_now()
         day = target.get("day", now.day)
         month = target.get("month", now.month)
         year = target.get("year", now.year)
@@ -561,7 +562,7 @@ class ChatAgentService:
         # No day specified - ask user which day
         context.state = AgentState.SELECT_EVENT_DAY
         
-        now = datetime.now()
+        now = tz_now()
         tomorrow = now + timedelta(days=1)
         
         return self._build_response(
@@ -585,7 +586,7 @@ class ChatAgentService:
         query = data.get("query", {})
         query_type = query.get("type", "day")
         
-        now = datetime.now()
+        now = tz_now()
         day = query.get("day", now.day)
         month = query.get("month", now.month)
         year = query.get("year", now.year)
@@ -845,7 +846,7 @@ class ChatAgentService:
         duration = (event.end_hour * 60 + event.end_minute) - (event.start_hour * 60 + event.start_minute)
         
         # Get events for next 7 days
-        now = datetime.now()
+        now = tz_now()
         events_by_day = await self.repo.get_events_for_week(
             now.day, now.month, now.year
         )
@@ -902,7 +903,7 @@ class ChatAgentService:
         year: Optional[int] = None
     ) -> ChatAgentResponse:
         """Find free time ranges on a specific day and let user pick a time."""
-        now = datetime.now()
+        now = tz_now()
         month = month or now.month
         year = year or now.year
         
@@ -963,8 +964,8 @@ class ChatAgentService:
     ) -> ChatAgentResponse:
         """Check if a specific time slot is available."""
         day = time_data["day"]
-        month = time_data.get("month") or datetime.now().month
-        year = time_data.get("year") or datetime.now().year
+        month = time_data.get("month") or tz_now().month
+        year = time_data.get("year") or tz_now().year
         start_hour = time_data["start_hour"]
         start_minute = time_data.get("start_minute", 0)
         
@@ -1013,7 +1014,7 @@ class ChatAgentService:
         event = context.event_data
         duration = (event.end_hour * 60 + event.end_minute) - (event.start_hour * 60 + event.start_minute)
         
-        now = datetime.now()
+        now = tz_now()
         all_ranges_by_day = []  # List of (date_tuple, ranges_for_day)
         
         # Search through next 14 days and collect free ranges grouped by day
@@ -1173,7 +1174,7 @@ class ChatAgentService:
         if date_time_match:
             day = int(date_time_match.group(1))
             month = int(date_time_match.group(2))
-            year = int(date_time_match.group(3)) if date_time_match.group(3) else datetime.now().year
+            year = int(date_time_match.group(3)) if date_time_match.group(3) else tz_now().year
             start_hour = int(date_time_match.group(4))
             start_minute = int(date_time_match.group(5))
         else:
@@ -1411,7 +1412,7 @@ class ChatAgentService:
     ) -> ChatAgentResponse:
         """Handle SELECT_EVENT_DAY state - user is specifying which day to list events from."""
         message_lower = message.strip().lower()
-        now = datetime.now()
+        now = tz_now()
         
         # Handle button clicks
         if message_lower in ["today", "1"]:
@@ -1453,7 +1454,7 @@ class ChatAgentService:
         context: SessionContext
     ) -> ChatAgentResponse:
         """Show events for the current week for user to select."""
-        now = datetime.now()
+        now = tz_now()
         all_events = []
         
         # Get events for next 7 days
@@ -1502,7 +1503,7 @@ class ChatAgentService:
     def _parse_date_input(self, message: str) -> Optional[Tuple[int, int, int]]:
         """Parse a date input from user message."""
         import re
-        now = datetime.now()
+        now = tz_now()
         
         # Try format: d/m or dd/mm
         match = re.match(r'^(\d{1,2})/(\d{1,2})$', message.strip())
@@ -1869,7 +1870,7 @@ class ChatAgentService:
         message_lower = message_without_time.lower()
         
         # Check for relative dates
-        now = datetime.now()
+        now = tz_now()
         if "tomorrow" in message_lower:
             tomorrow = now + timedelta(days=1)
             date_tuple = (tomorrow.day, tomorrow.month, tomorrow.year)
@@ -1988,7 +1989,7 @@ class ChatAgentService:
     def _parse_date_for_edit(self, message: str) -> Optional[Tuple[int, int, int]]:
         """Parse a date from user input for editing."""
         import re
-        now = datetime.now()
+        now = tz_now()
         message_lower = message.strip().lower()
         
         # Handle relative dates

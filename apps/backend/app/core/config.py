@@ -5,6 +5,8 @@ from typing import List
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.timezone import get_system_timezone_name
+
 
 class Settings(BaseSettings):
     """Application settings."""
@@ -31,8 +33,8 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> List[str]:
         return [origin.strip() for origin in self.cors_origins.split(",")]
 
-    # Defaults
-    default_timezone: str = "Asia/Bangkok"
+    # Defaults - uses detected system timezone instead of hardcoded value
+    default_timezone: str = get_system_timezone_name()
     default_working_hours_start: str = "09:00"
     default_working_hours_end: str = "18:00"
 
