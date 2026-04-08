@@ -10,14 +10,17 @@ import {
   createDefaultCategories,
   createEvent, 
   createTask,
+  createCategory,
+  deleteCategory,
   updateEvent,
   updateTask,
   fetchCalendars, 
   createCalendar,
   EventCreateRequest,
   TaskCreateRequest,
-  EventUpdateRequest,
+  CategoryCreateRequest,
   TaskUpdateRequest,
+  EventUpdateRequest,
   CategoryResponse,
   getUserTimezone,
   toLocalISOString
@@ -369,6 +372,26 @@ export function useEvents() {
     color: c.color,
   }));
 
+  // Add a new category
+  async function addCategory(name: string, color: string): Promise<CategoryResponse> {
+    if (!calendarId) throw new Error("No calendar ID");
+    
+    const newCat = await createCategory({
+      calendar_id: calendarId,
+      name,
+      color
+    });
+    
+    setCategories(prev => [...prev, newCat]);
+    return newCat;
+  }
+
+  // Remove a category
+  async function removeCategory(categoryId: string): Promise<void> {
+    await deleteCategory(categoryId);
+    setCategories(prev => prev.filter(c => c.id !== categoryId));
+  }
+
   // Refetch events (useful after month navigation)
   const refetch = useCallback((startDate?: Date, endDate?: Date) => {
     return loadEvents(startDate, endDate);
@@ -378,6 +401,8 @@ export function useEvents() {
     events, 
     addEvent,
     editEvent,
+    addCategory,
+    removeCategory,
     loading, 
     error, 
     calendarId,

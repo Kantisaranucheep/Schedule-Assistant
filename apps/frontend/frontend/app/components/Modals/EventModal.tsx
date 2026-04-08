@@ -18,7 +18,8 @@ interface EventModalProps {
     events: Record<string, Ev[]>;
     editingEvent?: { event: Ev, dateKey: string } | null;
     categories: EventCategory[];
-    onAddCategory: (cat: EventCategory) => void;
+    onAddCategory: (cat: EventCategory) => Promise<string | void | undefined>;
+    onDeleteCategory: (catId: string) => Promise<void>;
 }
 
 export default function EventModal({
@@ -29,6 +30,7 @@ export default function EventModal({
     editingEvent,
     categories,
     onAddCategory,
+    onDeleteCategory,
 }: EventModalProps) {
     const realTodayKey = useMemo(() => keyOf(new Date()), []);
 
@@ -644,10 +646,9 @@ export default function EventModal({
                                         <span className="small fw-bold text-secondary">Category</span>
                                         <div className="d-flex gap-2 flex-wrap align-items-center">
                                             {categories.map((c) => (
-                                                <button
+                                                <div
                                                     key={c.id}
-                                                    type="button"
-                                                    className={`btn btn-sm rounded-pill d-flex align-items-center gap-2 transition-all ${mCategoryId === c.id
+                                                    className={`btn btn-sm rounded-pill d-flex align-items-center gap-2 transition-all p-0 overflow-hidden ${mCategoryId === c.id
                                                         ? "shadow-sm border-0"
                                                         : "opacity-75 hover-opacity-100 border bg-light text-secondary"
                                                         }`}
@@ -656,26 +657,49 @@ export default function EventModal({
                                                         fontWeight: 600,
                                                         backgroundColor: mCategoryId === c.id ? `${c.color}20` : undefined,
                                                         color: mCategoryId === c.id ? c.color : undefined,
-                                                        border: mCategoryId === c.id ? `1px solid ${c.color}` : undefined
+                                                        border: mCategoryId === c.id ? `1px solid ${c.color}` : undefined,
+                                                        height: 28
                                                     }}
-                                                    onClick={() => setMCategoryId(c.id)}
                                                     title={c.name}
                                                 >
-                                                    <div
-                                                        className="rounded-circle shadow-sm"
-                                                        style={{
-                                                            width: 12,
-                                                            height: 12,
-                                                            backgroundColor: c.color,
+                                                    <div 
+                                                        className="d-flex align-items-center gap-2 ps-2 pe-1 h-100 cursor-pointer"
+                                                        onClick={() => setMCategoryId(c.id)}
+                                                    >
+                                                        <div
+                                                            className="rounded-circle shadow-sm"
+                                                            style={{
+                                                                width: 10,
+                                                                height: 10,
+                                                                backgroundColor: c.color,
+                                                            }}
+                                                        />
+                                                        <span className="text-truncate" style={{ maxWidth: 100 }}>{c.name}</span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-link p-0 pe-2 text-decoration-none border-0 d-flex align-items-center justify-content-center h-100 hover-opacity-100 transition-all"
+                                                        style={{ 
+                                                            fontSize: 14, 
+                                                            color: 'inherit',
+                                                            opacity: 0.5,
+                                                            lineHeight: 1
                                                         }}
-                                                    />
-                                                    {c.name}
-                                                </button>
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onDeleteCategory(c.id);
+                                                        }}
+                                                        aria-label={`Delete ${c.name} category`}
+                                                    >
+                                                        &times;
+                                                    </button>
+                                                </div>
                                             ))}
                                             <button
                                                 type="button"
                                                 className="btn btn-sm btn-light rounded-pill border fw-bold text-secondary text-nowrap"
                                                 onClick={() => setIsAddingCategory(!isAddingCategory)}
+                                                style={{ fontSize: 12, height: 28 }}
                                             >
                                                 + New Category
                                             </button>
@@ -705,14 +729,16 @@ export default function EventModal({
                                                             type="button"
                                                             className="btn btn-sm btn-dark fw-bold rounded-pill px-3"
                                                             disabled={!newCatName.trim()}
-                                                            onClick={() => {
+                                                            onClick={async () => {
                                                                 const newCat = {
                                                                     id: `cat-${Date.now()}`,
                                                                     name: newCatName.trim(),
                                                                     color: newCatColor
                                                                 };
-                                                                onAddCategory(newCat);
-                                                                setMCategoryId(newCat.id);
+                                                                const resultId = await onAddCategory(newCat);
+                                                                if (resultId) {
+                                                                    setMCategoryId(resultId);
+                                                                }
                                                                 setIsAddingCategory(false);
                                                                 setNewCatName("");
                                                             }}

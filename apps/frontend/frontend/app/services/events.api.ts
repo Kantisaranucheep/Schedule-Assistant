@@ -63,6 +63,12 @@ export interface TaskCreateRequest {
   notes?: string;
 }
 
+export interface CategoryCreateRequest {
+  calendar_id: string;
+  name: string;
+  color: string;
+}
+
 export interface TaskUpdateRequest {
   title?: string;
   date?: string;
@@ -208,6 +214,37 @@ export async function fetchCategories(calendarId: string): Promise<CategoryRespo
     throw new Error(`Failed to fetch categories: ${res.statusText}`);
   }
   return res.json();
+}
+
+/**
+ * Create a new category
+ */
+export async function createCategory(category: CategoryCreateRequest): Promise<CategoryResponse> {
+  const res = await fetch(`${API_BASE}/categories`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(category),
+  });
+  
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(error.detail?.message || error.detail || "Failed to create category");
+  }
+  return res.json();
+}
+
+/**
+ * Delete a category
+ */
+export async function deleteCategory(categoryId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/categories/${categoryId}`, {
+    method: "DELETE",
+  });
+  
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(error.detail?.message || error.detail || "Failed to delete category");
+  }
 }
 
 /**
