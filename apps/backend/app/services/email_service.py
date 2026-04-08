@@ -152,6 +152,7 @@ Please ensure all REQUIRED fields are set."""
         event_title: str,
         event_start: datetime,
         event_location: Optional[str] = None,
+        event_notes: Optional[str] = None,
         minutes_before: int = 0
     ) -> bool:
         """
@@ -162,6 +163,7 @@ Please ensure all REQUIRED fields are set."""
             event_title: Title of the event
             event_start: Event start datetime
             event_location: Optional event location
+            event_notes: Optional event notes/description
             minutes_before: How many minutes before the event this notification is for
 
         Returns:
@@ -184,6 +186,7 @@ Please ensure all REQUIRED fields are set."""
 
         # HTML email body
         location_html = f"<p><strong>📍 Location:</strong> {event_location}</p>" if event_location else ""
+        notes_html = f"<p><strong>📝 Notes:</strong></p><p style='background-color: #f0f0f0; padding: 10px; border-radius: 5px;'>{event_notes}</p>" if event_notes else ""
 
         body_html = f"""
         <!DOCTYPE html>
@@ -210,6 +213,7 @@ Please ensure all REQUIRED fields are set."""
                         <h2>📌 {event_title}</h2>
                         <p><strong>🕐 When:</strong> {time_str}</p>
                         {location_html}
+                        {notes_html}
                     </div>
                     <p style="margin-top: 20px;">Don't forget to prepare for your upcoming event!</p>
                 </div>
@@ -222,13 +226,13 @@ Please ensure all REQUIRED fields are set."""
         """
 
         # Plain text version
+        notes_text = f"\n📝 Notes:\n{event_notes}\n" if event_notes else ""
         body_text = f"""
 Event Reminder - Starting in {timing}!
 
 📌 {event_title}
 🕐 When: {time_str}
-{"📍 Location: " + event_location if event_location else ""}
-
+{"📍 Location: " + event_location if event_location else ""}{notes_text}
 Don't forget to prepare for your upcoming event!
 
 ---

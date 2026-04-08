@@ -34,6 +34,7 @@ class ScheduledNotification:
     event_title: str
     event_start: datetime
     event_location: Optional[str]
+    event_notes: Optional[str]
     minutes_before: int
     notification_time: datetime  # When to send the notification
 
@@ -169,6 +170,7 @@ class NotificationScheduler:
                             event_title=event.title,
                             event_start=event.start_time,
                             event_location=event.location,
+                            event_notes=event.notes,
                             minutes_before=minutes_before
                         )
                         
