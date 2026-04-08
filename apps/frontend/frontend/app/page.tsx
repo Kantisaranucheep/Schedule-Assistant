@@ -40,7 +40,18 @@ export default function Home() {
   const router = useRouter();
   
   // Events and categories from API
-  const { events: apiEvents, addEvent: apiAddEvent, editEvent: apiEditEvent, loading, error, calendarId, categories: apiCategories, refetch } = useEvents();
+  const { 
+    events: apiEvents, 
+    addEvent: apiAddEvent, 
+    editEvent: apiEditEvent, 
+    addCategory: apiAddCategory,
+    removeCategory: apiDeleteCategory,
+    loading, 
+    error, 
+    calendarId, 
+    categories, 
+    refetch 
+  } = useEvents();
 
   // Local events overlay (for immediate UI updates before API sync)
   const [localEvents, setLocalEvents] = useState<EventMap>({});
@@ -59,22 +70,24 @@ export default function Home() {
     return merged;
   }, [apiEvents, localEvents]);
 
-  // Local categories state (fallback if API categories not loaded yet)
-  const [localCategories, setLocalCategories] = useState<EventCategory[]>([
-    { id: "cat-urgent", name: "Urgent / Important", color: "#ff3b30" },
-    { id: "cat-work", name: "Work", color: "#ff9500" },
-    { id: "cat-personal", name: "Personal", color: "#ffcc00" },
-    { id: "cat-health", name: "Health / Fitness", color: "#34c759" },
-    { id: "cat-reminder", name: "Reminder", color: "#00c7be" },
-    { id: "cat-meetings", name: "Meetings / Appointments", color: "#007aff" },
-    { id: "cat-social", name: "Social / Fun", color: "#af52de" },
-  ]);
+  async function handleAddCategory(cat: EventCategory): Promise<string | undefined> {
+    try {
+      const newCat = await apiAddCategory(cat.name, cat.color);
+      return newCat.id;
+    } catch (err) {
+      console.error("Failed to add category:", err);
+      alert("Failed to add category");
+      return undefined;
+    }
+  }
 
-  // Use API categories if available, otherwise fallback to local
-  const categories = apiCategories.length > 0 ? apiCategories : localCategories;
-
-  function handleAddCategory(cat: EventCategory) {
-    setLocalCategories((prev) => [...prev, cat]);
+  async function handleDeleteCategory(catId: string) {
+    try {
+      await apiDeleteCategory(catId);
+    } catch (err) {
+      console.error("Failed to delete category:", err);
+      alert("Failed to delete category");
+    }
   }
 
   // Month view default: current month
@@ -565,6 +578,7 @@ export default function Home() {
             editingEvent={editingEvent}
             categories={categories}
             onAddCategory={handleAddCategory}
+            onDeleteCategory={handleDeleteCategory}
           />
 
           {/* ===== VIEW EVENT MODAL ===== */}
