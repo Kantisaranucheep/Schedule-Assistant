@@ -119,7 +119,7 @@ export default function EmailModal({
                     <div className="p-3 rounded-4 transition-all" style={{ backgroundColor: "rgba(255, 255, 255, 0.08)" }}>
                         <div className="d-flex align-items-center gap-2 mb-2">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" className="text-white-50" viewBox="0 0 16 16">
-                                <path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v.217l7 4.2 7-4.2V4a1 1 0 0 0-1-1zm13 2.383-4.708 2.825L15 11.105zm-.034 6.876-5.64-3.471L8 9.583l-1.326-.795-5.64 3.471A1 1 0 0 0 2 13h12a1 1 0 0 0 .966-.741ZM1 11.105l4.708-2.897L1 5.383z"/>
+                                <path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v.217l7 4.2 7-4.2V4a1 1 0 0 0-1-1zm13 2.383-4.708 2.825L15 11.105zm-.034 6.876-5.64-3.471L8 9.583l-1.326-.795-5.64 3.471A1 1 0 0 0 2 13h12a1 1 0 0 0 .966-.741ZM1 11.105l4.708-2.897L1 5.383z" />
                             </svg>
                             <span className="small text-white-50 fw-bold">Email Address</span>
                         </div>
@@ -141,7 +141,7 @@ export default function EmailModal({
                     {error && (
                         <div className="bg-danger bg-opacity-10 border border-danger rounded-3 p-3">
                             <div className="text-danger small">
-                                <strong>Error:</strong><br/>
+                                <strong>Error:</strong><br />
                                 <div style={{ fontSize: "11px", fontFamily: "monospace", marginTop: "8px", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                                     {error}
                                 </div>
@@ -165,7 +165,7 @@ export default function EmailModal({
                         disabled={testLoading || !localEmail}
                         style={{ opacity: testLoading ? 0.6 : 1 }}
                     >
-                        {testLoading ? "Sending..." : "📧 Test Email"}
+                        {testLoading ? "Sending..." : "Test Email"}
                     </button>
                     <button
                         type="button"
