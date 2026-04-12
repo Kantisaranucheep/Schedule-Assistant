@@ -82,6 +82,8 @@ async def sample_user(db_session: AsyncSession) -> User:
     """Create a sample user for testing."""
     user = User(
         id=uuid.uuid4(),
+        username="testuser",
+        password="testpass123",
         email="test@example.com",
         name="Test User",
         timezone="Asia/Bangkok",

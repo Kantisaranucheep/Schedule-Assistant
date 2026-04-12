@@ -38,6 +38,16 @@ const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 export default function Home() {
   const router = useRouter();
+  const [authChecked, setAuthChecked] = useState(false);
+
+  useEffect(() => {
+    const session = localStorage.getItem("scheduler_auth_session");
+    if (!session) {
+      router.replace("/login");
+      return;
+    }
+    setAuthChecked(true);
+  }, [router]);
   
   // Events and categories from API
   const { 
@@ -444,6 +454,10 @@ export default function Home() {
   const dayEvents = (filteredEvents[selectedDay] || [])
     .slice()
     .sort((a, b) => (a.startMin ?? 0) - (b.startMin ?? 0));
+
+  if (!authChecked) {
+    return null;
+  }
 
   return (
     <div className="container-fluid vh-100 p-0 d-flex flex-column overflow-hidden bg-dark">

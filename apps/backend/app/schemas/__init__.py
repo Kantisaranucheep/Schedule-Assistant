@@ -6,6 +6,7 @@ from .event import EventCreate, EventUpdate, EventResponse
 from .task import TaskCreate, TaskUpdate, TaskResponse
 from .chat import ChatRequest, ChatResponse, ChatSessionResponse, ChatMessageResponse
 from .settings import UserSettingsCreate, UserSettingsUpdate, UserSettingsResponse
+from .auth import LoginRequest, LoginResponse
 
 __all__ = [
     "CalendarCreate",
@@ -27,4 +28,6 @@ __all__ = [
     "UserSettingsCreate",
     "UserSettingsUpdate",
     "UserSettingsResponse",
+    "LoginRequest",
+    "LoginResponse",
 ]

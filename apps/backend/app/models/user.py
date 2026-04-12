@@ -19,6 +19,8 @@ class User(BaseModel):
 
     __tablename__ = "users"
 
+    username: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    password: Mapped[str] = mapped_column(String(255))
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
     timezone: Mapped[str] = mapped_column(String(50), default="Asia/Bangkok")

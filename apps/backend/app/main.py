@@ -19,6 +19,7 @@ from app.routers import (
     tasks_router,
     availability_router,
     settings_router,
+    auth_router,
 )
 # Import new chat router (replaces old agent/chat system)
 from app.chat.router import router as chat_agent_router
@@ -88,6 +89,7 @@ app.include_router(tasks_router)
 app.include_router(availability_router)
 app.include_router(chat_agent_router)  # New chat agent system
 app.include_router(settings_router)
+app.include_router(auth_router)
 
 
 @app.get("/")

@@ -36,6 +36,8 @@ async def seed_database():
         if demo_user is None:
             demo_user = User(
                 id=DEMO_USER_ID,
+                username="demo",
+                password="demo1234",
                 email="demo@example.com",
                 name="Demo User",
                 timezone="Asia/Bangkok",
