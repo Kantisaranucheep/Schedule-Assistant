@@ -157,23 +157,35 @@ export default function EmailModal({
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 pt-0 d-flex gap-2">
+                <div className="p-4 pt-0 d-flex gap-2 flex-column">
+                    <div className="d-flex gap-2">
+                        <button
+                            type="button"
+                            className="btn btn-outline-light rounded-pill py-2 fw-bold shadow-sm flex-grow-1"
+                            onClick={handleTestEmail}
+                            disabled={testLoading || !localEmail}
+                            style={{ opacity: testLoading ? 0.6 : 1 }}
+                        >
+                            {testLoading ? "Sending..." : "Test Email"}
+                        </button>
+                        <button
+                            type="button"
+                            className="btn btn-primary flex-grow-1 rounded-pill py-2 fw-bold shadow-sm"
+                            onClick={handleSave}
+                            style={{ background: "#5a4ad1", borderColor: "#5a4ad1" }}
+                        >
+                            Save Email
+                        </button>
+                    </div>
                     <button
                         type="button"
-                        className="btn btn-outline-light rounded-pill py-2 fw-bold shadow-sm flex-grow-1"
-                        onClick={handleTestEmail}
-                        disabled={testLoading || !localEmail}
-                        style={{ opacity: testLoading ? 0.6 : 1 }}
+                        className="btn btn-danger rounded-pill py-2 fw-bold shadow-sm mt-3"
+                        onClick={() => {
+                            localStorage.removeItem("scheduler_auth_session");
+                            window.location.reload();
+                        }}
                     >
-                        {testLoading ? "Sending..." : "Test Email"}
-                    </button>
-                    <button
-                        type="button"
-                        className="btn btn-primary flex-grow-1 rounded-pill py-2 fw-bold shadow-sm"
-                        onClick={handleSave}
-                        style={{ background: "#5a4ad1", borderColor: "#5a4ad1" }}
-                    >
-                        Save Email
+                        Logout
                     </button>
                 </div>
             </div>
