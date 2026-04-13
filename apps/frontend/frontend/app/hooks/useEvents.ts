@@ -50,13 +50,26 @@ export function useEvents() {
         setLoading(true);
         setError(null);
 
+        let userId = DEFAULT_USER_ID;
+        try {
+          const sessionItem = localStorage.getItem("scheduler_auth_session");
+          if (sessionItem) {
+            const sessionData = JSON.parse(sessionItem);
+            if (sessionData && sessionData.user_id) {
+              userId = sessionData.user_id;
+            }
+          }
+        } catch (e) {
+          console.error("Error reading session", e);
+        }
+
         // Try to get existing calendars for user
-        let calendars = await fetchCalendars(DEFAULT_USER_ID);
+        let calendars = await fetchCalendars(userId);
         
         let calendar;
         if (calendars.length === 0) {
           // Create default calendar if none exists
-          calendar = await createCalendar(DEFAULT_USER_ID, "My Calendar");
+          calendar = await createCalendar(userId, "My Calendar");
           // Create default categories for new calendar
           const defaultCats = await createDefaultCategories(calendar.id);
           setCategories(defaultCats);

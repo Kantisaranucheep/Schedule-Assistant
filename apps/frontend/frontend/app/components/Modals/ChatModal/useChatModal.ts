@@ -12,8 +12,7 @@ import {
 } from "../../../services/chat.api";
 
 // Default IDs - in production, these should come from user context
-const DEFAULT_CALENDAR_ID = "00000000-0000-0000-0000-000000000001";
-const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
+
 
 export type ChatModalConfig = {
   calendarId?: string;
@@ -41,8 +40,24 @@ function transformApiSession(apiSession: ChatSessionResponse): ChatSession {
 }
 
 export function useChatModal(config: ChatModalConfig = {}) {
-  const calendarId = config.calendarId || DEFAULT_CALENDAR_ID;
-  const userId = config.userId || DEFAULT_USER_ID;
+  const [calendarId, setCalendarId] = useState<string>(config.calendarId || "");
+  const [userId, setUserId] = useState<string>(config.userId || "");
+
+  useEffect(() => {
+    if (!userId) {
+      try {
+        const sessionItem = localStorage.getItem("scheduler_auth_session");
+        if (sessionItem) {
+          const sessionData = JSON.parse(sessionItem);
+          if (sessionData && sessionData.user_id) {
+            setUserId(sessionData.user_id);
+          }
+        }
+      } catch (e) {
+        console.error("Error reading session", e);
+      }
+    }
+  }, [userId]);
 
   const [chatOpen, setChatOpen] = useState(false);
   const [ttsEnabled, setTtsEnabled] = useState(false);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { sendTestEmail } from "../../services/settings.api";
 
-const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
+
 
 interface EmailModalProps {
     isOpen: boolean;
@@ -60,7 +60,24 @@ export default function EmailModal({
         setTestMessage("");
 
         try {
-            const result = await sendTestEmail(DEFAULT_USER_ID);
+            let userId = "";
+            try {
+                const sessionItem = localStorage.getItem("scheduler_auth_session");
+                if (sessionItem) {
+                    const sessionData = JSON.parse(sessionItem);
+                    userId = sessionData.user_id;
+                }
+            } catch (e) {
+                console.error("Error reading session", e);
+            }
+
+            if (!userId) {
+                setError("User not authenticated.");
+                setTestLoading(false);
+                return;
+            }
+
+            const result = await sendTestEmail(userId);
 
             if (!result.success) {
                 setError(result.error || "Failed to send test email");

@@ -33,8 +33,7 @@ import EventModal from "./components/Modals/EventModal";
 import ViewEventModal from "./components/Modals/ViewEventModal";
 import { useEvents } from "./hooks/useEvents";
 
-// Default user ID (matches backend)
-const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
+
 
 export default function Home() {
   const router = useRouter();
@@ -130,7 +129,20 @@ export default function Home() {
   // Load settings from backend on mount
   useEffect(() => {
     async function loadSettings() {
-      const settings = await fetchUserSettings(DEFAULT_USER_ID);
+      let userId = "";
+      try {
+        const sessionItem = localStorage.getItem("scheduler_auth_session");
+        if (sessionItem) {
+          const sessionData = JSON.parse(sessionItem);
+          userId = sessionData.user_id;
+        }
+      } catch (e) {
+        console.error("Error reading session", e);
+      }
+      
+      if (!userId) return;
+
+      const settings = await fetchUserSettings(userId);
       if (settings) {
         setNotificationSettings({
           windowEnabled: settings.window_notifications_enabled,
@@ -151,7 +163,20 @@ export default function Home() {
   ) => {
     if (!settingsLoaded) return; // Don't save during initial load
     
-    await saveUserSettings(DEFAULT_USER_ID, {
+    let userId = "";
+    try {
+      const sessionItem = localStorage.getItem("scheduler_auth_session");
+      if (sessionItem) {
+        const sessionData = JSON.parse(sessionItem);
+        userId = sessionData.user_id;
+      }
+    } catch (e) {
+      console.error("Error reading session", e);
+    }
+
+    if (!userId) return;
+
+    await saveUserSettings(userId, {
       notifications_enabled: newSettings.emailEnabled,
       window_notifications_enabled: newSettings.windowEnabled,
       notification_email: email || null,
