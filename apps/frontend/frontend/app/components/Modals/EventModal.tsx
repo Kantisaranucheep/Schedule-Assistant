@@ -45,6 +45,11 @@ export default function EventModal({
     const [mNotes, setMNotes] = useState("");
     const [mCategoryId, setMCategoryId] = useState<string>("");
 
+    // Collaborators (array of emails or names)
+    const [mCollaborators, setMCollaborators] = useState<string[]>([]);
+    const [collabInput, setCollabInput] = useState("");
+    const [isAddingCollaborator, setIsAddingCollaborator] = useState(false);
+
     const [isAddingCategory, setIsAddingCategory] = useState(false);
     const [newCatName, setNewCatName] = useState("");
     const [newCatColor, setNewCatColor] = useState("#007aff");
@@ -75,6 +80,8 @@ export default function EventModal({
                     setMIsRecurring(event.isRecurring || false);
                     setMRecurEndDate(event.recurEndDate || dateKey);
                     setMRecurDays(event.recurDays || []);
+                    setMCollaborators(event.collaborators || []);
+                    setCollabInput("");
                     if (event.allDay) {
                         setMStart("09:00");
                         setMEnd("09:00");
@@ -102,6 +109,8 @@ export default function EventModal({
                     setMIsRecurring(false);
                     setMRecurEndDate(realTodayKey);
                     setMRecurDays([]);
+                    setMCollaborators([]);
+                    setCollabInput("");
                 }
             }, 0);
             return () => clearTimeout(t);
@@ -178,6 +187,7 @@ export default function EventModal({
             color: selectedCat ? selectedCat.color : (editingEvent ? editingEvent.event.color : RAINBOW[1]),
             location: mLocation.trim(),
             notes: mNotes.trim(),
+            collaborators: mCollaborators,
             ...(modalKind === "event" && mIsRecurring ? {
                 isRecurring: true,
                 recurEndDate: mRecurEndDate,
@@ -620,6 +630,94 @@ export default function EventModal({
                                         onChange={(e) => setMNotes(e.target.value)}
                                         style={{ resize: "vertical", minHeight: 60 }}
                                     />
+                                </div>
+                            </div>
+
+                            {/* Collaborators Field */}
+                            <div className="d-flex gap-3">
+                                <div
+                                    className="text-secondary d-flex align-items-center justify-content-center"
+                                    style={{ width: 44, height: 44 }}
+                                >
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        width="24"
+                                        height="24"
+                                    >
+                                        <circle cx="12" cy="12" r="10" />
+                                        <path d="M8 15c1.333-2 6.667-2 8 0" />
+                                        <circle cx="9" cy="10" r="1" />
+                                        <circle cx="15" cy="10" r="1" />
+                                    </svg>
+                                </div>
+                                <div className="flex-grow-1 p-2 rounded-4 bg-light border">
+                                    <label className="small fw-bold text-secondary mb-1">Collaborators (usernames, optional)</label>
+                                    <div className="d-flex flex-wrap gap-2 mb-2">
+                                        {mCollaborators.map((c, idx) => (
+                                            <span key={idx} className="badge bg-primary bg-opacity-10 text-primary fw-bold px-2 py-1 rounded-pill d-flex align-items-center">
+                                                {c}
+                                                <button type="button" className="btn btn-link btn-sm p-0 ms-2 text-danger" style={{ fontSize: 14 }} onClick={() => setMCollaborators(mCollaborators.filter((_, i) => i !== idx))}>&times;</button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                    {!isAddingCollaborator ? (
+                                        <button
+                                            type="button"
+                                            className="btn btn-sm btn-light rounded-pill border fw-bold text-secondary text-nowrap"
+                                            style={{ fontSize: 12, height: 28 }}
+                                            onClick={() => setIsAddingCollaborator(true)}
+                                        >
+                                            + Add Collaborator
+                                        </button>
+                                    ) : (
+                                        <div className="d-flex gap-2 align-items-center mt-2">
+                                            <input
+                                                type="text"
+                                                className="form-control form-control-sm border-0"
+                                                placeholder="Collaborator username"
+                                                value={collabInput}
+                                                onChange={e => setCollabInput(e.target.value)}
+                                                onKeyDown={e => {
+                                                    if (e.key === 'Enter' && collabInput.trim()) {
+                                                        e.preventDefault();
+                                                        if (!mCollaborators.includes(collabInput.trim())) {
+                                                            setMCollaborators([...mCollaborators, collabInput.trim()]);
+                                                        }
+                                                        setCollabInput("");
+                                                        setIsAddingCollaborator(false);
+                                                    }
+                                                }}
+                                                autoFocus
+                                            />
+                                            <button
+                                                type="button"
+                                                className="btn btn-sm btn-dark fw-bold rounded-pill px-3"
+                                                disabled={!collabInput.trim()}
+                                                onClick={() => {
+                                                    if (collabInput.trim() && !mCollaborators.includes(collabInput.trim())) {
+                                                        setMCollaborators([...mCollaborators, collabInput.trim()]);
+                                                    }
+                                                    setCollabInput("");
+                                                    setIsAddingCollaborator(false);
+                                                }}
+                                            >
+                                                Add
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="btn btn-sm btn-light fw-bold rounded-pill px-3 border"
+                                                onClick={() => {
+                                                    setCollabInput("");
+                                                    setIsAddingCollaborator(false);
+                                                }}
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 

@@ -20,6 +20,7 @@ export type Ev = {
     isRecurring?: boolean;
     recurEndDate?: string;
     recurDays?: number[]; // 0=Sun, 1=Mon, ..., 6=Sat
+    collaborators?: string[]; // Optional list of collaborators (emails or names)
 };
 
 export type EventMap = Record<string, Ev[]>;
