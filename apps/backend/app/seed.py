@@ -13,6 +13,9 @@ from app.models import User, UserSettings, Calendar, Event, Category
 DEMO_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 DEMO_CALENDAR_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
+# Add a second user for testing
+SECOND_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000002")
+
 # Default categories matching frontend
 DEFAULT_CATEGORIES = [
     {"id": uuid.UUID("00000000-0000-0000-0000-000000000101"), "name": "Urgent / Important", "color": "#ff3b30"},
@@ -30,6 +33,7 @@ async def seed_database():
     async with AsyncSessionLocal() as db:
         from sqlalchemy import select
 
+
         # Create demo user if missing
         user_result = await db.execute(select(User).where(User.id == DEMO_USER_ID))
         demo_user = user_result.scalar_one_or_none()
@@ -43,6 +47,20 @@ async def seed_database():
                 timezone="Asia/Bangkok",
             )
             db.add(demo_user)
+
+        # Create second user if missing
+        user2_result = await db.execute(select(User).where(User.id == SECOND_USER_ID))
+        user2 = user2_result.scalar_one_or_none()
+        if user2 is None:
+            user2 = User(
+                id=SECOND_USER_ID,
+                username="testuser",
+                password="test1234",
+                email="testuser@example.com",
+                name="Test User",
+                timezone="Asia/Bangkok",
+            )
+            db.add(user2)
 
         # Create user settings if missing
         settings_result = await db.execute(select(UserSettings).where(UserSettings.user_id == DEMO_USER_ID))
@@ -90,6 +108,8 @@ async def seed_database():
         print(f"Demo User ID:     {DEMO_USER_ID}")
         print(f"Demo Calendar ID: {DEMO_CALENDAR_ID}")
         print(f"Demo Email:       demo@example.com")
+        print(f"Test User ID:     {SECOND_USER_ID}")
+        print(f"Test User Email:  testuser@example.com")
         print(f"Categories:       {len(DEFAULT_CATEGORIES)} default categories created")
         print("=" * 50)
 

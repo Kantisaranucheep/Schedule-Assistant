@@ -81,6 +81,8 @@ app.add_middleware(
 )
 
 # Register routers
+
+from app.routers import collaborators_router
 app.include_router(health_router)
 app.include_router(calendars_router)
 app.include_router(categories_router)
@@ -90,6 +92,7 @@ app.include_router(availability_router)
 app.include_router(chat_agent_router)  # New chat agent system
 app.include_router(settings_router)
 app.include_router(auth_router)
+app.include_router(collaborators_router)
 
 
 @app.get("/")
