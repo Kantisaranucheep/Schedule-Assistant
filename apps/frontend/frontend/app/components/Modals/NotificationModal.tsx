@@ -11,6 +11,7 @@ interface NotificationModalProps {
     onEmailClick: () => void;
 }
 
+
 export default function NotificationModal({
     isOpen,
     onClose,
@@ -20,7 +21,13 @@ export default function NotificationModal({
     onEmailClick
 }: NotificationModalProps) {
     const [showTimePicker, setShowTimePicker] = useState(false);
-    
+    // Demo invites state (replace with real data later)
+    const [invites, setInvites] = useState([
+        { id: 1, eventTitle: "Team Meeting", inviter: "alice", eventDate: "2026-04-15" },
+        { id: 2, eventTitle: "Project Kickoff", inviter: "bob", eventDate: "2026-04-20" },
+    ]);
+    const [activeTab, setActiveTab] = useState<'invites' | 'settings'>('invites');
+
     if (!isOpen) return null;
 
     const BellIcon = () => (
@@ -114,14 +121,15 @@ export default function NotificationModal({
                 }}
                 onClick={(e) => e.stopPropagation()}
             >
-                {/* Header */}
+
+                {/* Header with Tabs */}
                 <div className="d-flex align-items-center justify-content-between p-4 border-bottom border-secondary border-opacity-25">
                     <div className="d-flex align-items-center gap-2">
                         <div className="p-2 bg-primary bg-opacity-25 rounded-3 text-primary">
                             <BellIcon />
                         </div>
                         <div className="fw-bold text-uppercase letter-spacing-1">
-                            Notification Settings
+                            Notifications
                         </div>
                     </div>
                     <button
@@ -133,149 +141,197 @@ export default function NotificationModal({
                         ×
                     </button>
                 </div>
-
-                {/* Content */}
-                <div className="p-4 d-flex flex-column gap-4">
-                    {/* Window Notifications Toggle */}
-                    <div className="d-flex align-items-center justify-content-between p-3 rounded-4 transition-all" style={{ backgroundColor: "rgba(255, 255, 255, 0.08)" }}>
-                        <div className="d-flex align-items-center gap-3">
-                            <div className={`p-2 rounded-3 ${settings.windowEnabled ? 'text-info bg-info bg-opacity-25' : 'text-white-50 bg-secondary bg-opacity-25'}`}>
-                                {settings.windowEnabled ? <BellIcon /> : <BellSlashIcon />}
-                            </div>
-                            <div>
-                                <div className="fw-semibold">Window Notifications</div>
-                                <div className="small text-white-50">Browser push notifications</div>
-                            </div>
-                        </div>
-                        <div className="form-check form-switch m-0">
-                            <input
-                                className="form-check-input shadow-none cursor-pointer"
-                                type="checkbox"
-                                role="switch"
-                                style={{ width: "3em", height: "1.5rem" }}
-                                checked={settings.windowEnabled ?? true}
-                                onChange={(e) => onUpdateSettings({ ...settings, windowEnabled: e.target.checked })}
-                            />
-                        </div>
+                {/* Tabs - Modern pill style */}
+                <div className="d-flex justify-content-center align-items-center py-3 bg-dark position-relative" style={{zIndex:2}}>
+                    <div className="bg-secondary bg-opacity-10 rounded-pill shadow-sm d-flex p-1" style={{gap: 4, minWidth: 320, maxWidth: 400}}>
+                        <button
+                            className={`btn btn-sm d-flex align-items-center gap-2 px-4 py-2 fw-bold rounded-pill transition-all ${activeTab === 'invites' ? 'bg-primary text-white shadow' : 'bg-transparent text-secondary'}`}
+                            style={{fontSize: 15, border: 'none'}}
+                            onClick={() => setActiveTab('invites')}
+                        >
+                            <svg width="18" height="18" fill="currentColor" className="bi bi-people" viewBox="0 0 16 16"><path d="M13 7a2 2 0 1 0-4 0 2 2 0 0 0 4 0zM6 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm7 8a3 3 0 0 0-2.824-2H5.824A3 3 0 0 0 3 16h10zm-9.995-.15A2.01 2.01 0 0 1 5.824 14h4.352a2.01 2.01 0 0 1 2.819 1.85H3.005z"/></svg>
+                            Invitations
+                        </button>
+                        <button
+                            className={`btn btn-sm d-flex align-items-center gap-2 px-4 py-2 fw-bold rounded-pill transition-all ${activeTab === 'settings' ? 'bg-primary text-white shadow' : 'bg-transparent text-secondary'}`}
+                            style={{fontSize: 15, border: 'none'}}
+                            onClick={() => setActiveTab('settings')}
+                        >
+                            <svg width="18" height="18" fill="currentColor" className="bi bi-gear" viewBox="0 0 16 16"><path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/><path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.901-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.291.159a1.873 1.873 0 0 0 2.693-1.115l.094-.319z"/></svg>
+                            Settings
+                        </button>
                     </div>
+                </div>
 
-                    {/* Email Notifications Toggle */}
-                    <div className="d-flex align-items-center justify-content-between p-3 rounded-4 transition-all" style={{ backgroundColor: "rgba(255, 255, 255, 0.08)" }}>
-                        <div className="d-flex align-items-center gap-3">
-                            <div className={`p-2 rounded-3 ${settings.emailEnabled ? 'text-warning bg-warning bg-opacity-25' : 'text-white-50 bg-secondary bg-opacity-25'}`}>
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" className="bi bi-envelope" viewBox="0 0 16 16">
-                                    <path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v.217l7 4.2 7-4.2V4a1 1 0 0 0-1-1zm13 2.383-4.708 2.825L15 11.105zm-.034 6.876-5.64-3.471L8 9.583l-1.326-.795-5.64 3.471A1 1 0 0 0 2 13h12a1 1 0 0 0 .966-.741ZM1 11.105l4.708-2.897L1 5.383z"/>
-                                </svg>
+
+                {/* Content: Tabs */}
+                <div className="p-4 d-flex flex-column gap-4" style={{background: 'rgba(255,255,255,0.03)', borderRadius: 24, boxShadow: '0 2px 16px 0 rgba(0,0,0,0.10)'}}>
+                    {activeTab === 'invites' && (
+                        <div className="mb-2">
+                            <div className="fw-bold mb-3 d-flex align-items-center gap-2" style={{ fontSize: 18 }}>
+                                <svg width="20" height="20" fill="currentColor" className="bi bi-people" viewBox="0 0 16 16"><path d="M13 7a2 2 0 1 0-4 0 2 2 0 0 0 4 0zM6 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm7 8a3 3 0 0 0-2.824-2H5.824A3 3 0 0 0 3 16h10zm-9.995-.15A2.01 2.01 0 0 1 5.824 14h4.352a2.01 2.01 0 0 1 2.819 1.85H3.005z"/></svg>
+                                Invitations
                             </div>
-                            <div>
-                                <div className="fw-semibold">Email Notifications</div>
-                                <div className="small text-white-50">
-                                    {userEmail ? (
-                                        <span className="text-success">{userEmail}</span>
-                                    ) : (
-                                        <span 
-                                            className="text-warning cursor-pointer text-decoration-underline"
-                                            onClick={onEmailClick}
-                                        >
-                                            Click to set email
-                                        </span>
-                                    )}
+                            {invites.length === 0 ? (
+                                <div className="small text-secondary text-center py-4">No new invitations</div>
+                            ) : (
+                                <div className="d-flex flex-column gap-3 mb-2">
+                                    {invites.map((invite) => (
+                                        <div key={invite.id} className="rounded-4 shadow-sm p-3 bg-white bg-opacity-10 border border-secondary border-opacity-25 d-flex flex-column gap-2 position-relative">
+                                            <div className="fw-bold text-white fs-5">{invite.eventTitle}</div>
+                                            <div className="small text-secondary">Invited by <span className="fw-semibold">{invite.inviter}</span> for <span className="fw-semibold">{invite.eventDate}</span></div>
+                                            <div className="d-flex gap-2 mt-1">
+                                                <button className="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" style={{minWidth: 90}} onClick={() => setInvites(invites.filter(i => i.id !== invite.id))}>Accept</button>
+                                                <button className="btn btn-outline-light rounded-pill px-4 fw-bold border shadow-sm" style={{minWidth: 90}} onClick={() => setInvites(invites.filter(i => i.id !== invite.id))}>Decline</button>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
-                            </div>
-                        </div>
-                        <div className="form-check form-switch m-0">
-                            <input
-                                className="form-check-input shadow-none cursor-pointer"
-                                type="checkbox"
-                                role="switch"
-                                style={{ width: "3em", height: "1.5rem" }}
-                                checked={settings.emailEnabled ?? false}
-                                onChange={(e) => onUpdateSettings({ ...settings, emailEnabled: e.target.checked })}
-                                disabled={!userEmail}
-                            />
-                        </div>
-                    </div>
-
-                    {/* Notification Timing Section - Only show if email enabled */}
-                    {settings.emailEnabled && userEmail && (
-                        <div className="p-3 rounded-4" style={{ backgroundColor: "rgba(255, 255, 255, 0.05)" }}>
-                            <div className="d-flex align-items-center gap-2 mb-3">
-                                <ClockIcon />
-                                <span className="fw-semibold">When to Notify</span>
-                                <span className="badge bg-secondary ms-auto">{notificationTimes.length}/2</span>
-                            </div>
-                            
-                            {/* Current notification times */}
-                            <div className="d-flex flex-column gap-2 mb-3">
-                                {notificationTimes.length === 0 ? (
-                                    <div className="text-white-50 small text-center py-2">
-                                        No notification times set. Add one below.
-                                    </div>
-                                ) : (
-                                    notificationTimes.map((time, index) => (
-                                        <div 
-                                            key={time.minutes_before}
-                                            className="d-flex align-items-center justify-content-between p-2 px-3 rounded-3"
-                                            style={{ backgroundColor: "rgba(255, 255, 255, 0.1)" }}
-                                        >
-                                            <div className="d-flex align-items-center gap-2">
-                                                <span className="badge bg-primary">{index + 1}</span>
-                                                <span>{time.label || minutesToLabel(time.minutes_before)}</span>
-                                            </div>
-                                            <button
-                                                type="button"
-                                                className="btn btn-sm btn-outline-danger border-0 rounded-circle p-1"
-                                                onClick={() => handleRemoveNotificationTime(time.minutes_before)}
-                                                title="Remove"
-                                            >
-                                                <TrashIcon />
-                                            </button>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
-
-                            {/* Add notification time */}
-                            {canAddMore && (
-                                <>
-                                    {!showTimePicker ? (
-                                        <button
-                                            type="button"
-                                            className="btn btn-outline-primary w-100 d-flex align-items-center justify-content-center gap-2 rounded-3"
-                                            onClick={() => setShowTimePicker(true)}
-                                        >
-                                            <PlusIcon /> Add Notification Time
-                                        </button>
-                                    ) : (
-                                        <div className="d-flex flex-column gap-2">
-                                            <div className="small text-white-50 mb-1">Select when to notify:</div>
-                                            <div className="d-flex flex-wrap gap-2">
-                                                {NOTIFICATION_TIME_OPTIONS
-                                                    .filter(opt => !notificationTimes.some(t => t.minutes_before === opt.value))
-                                                    .map(opt => (
-                                                        <button
-                                                            key={opt.value}
-                                                            type="button"
-                                                            className="btn btn-sm btn-outline-light rounded-pill"
-                                                            onClick={() => handleAddNotificationTime(opt.value)}
-                                                        >
-                                                            {opt.label}
-                                                        </button>
-                                                    ))
-                                                }
-                                            </div>
-                                            <button
-                                                type="button"
-                                                className="btn btn-sm btn-link text-white-50 mt-1"
-                                                onClick={() => setShowTimePicker(false)}
-                                            >
-                                                Cancel
-                                            </button>
-                                        </div>
-                                    )}
-                                </>
                             )}
                         </div>
+                    )}
+                    {activeTab === 'settings' && (
+                        <>
+                        {/* Window Notifications Toggle */}
+                        <div className="d-flex align-items-center justify-content-between p-3 rounded-4 transition-all shadow-sm" style={{ backgroundColor: "rgba(255, 255, 255, 0.10)" }}>
+                            <div className="d-flex align-items-center gap-3">
+                                <div className={`p-2 rounded-3 ${settings.windowEnabled ? 'text-info bg-info bg-opacity-25' : 'text-white-50 bg-secondary bg-opacity-25'}`}>
+                                    {settings.windowEnabled ? <BellIcon /> : <BellSlashIcon />}
+                                </div>
+                                <div>
+                                    <div className="fw-semibold">Window Notifications</div>
+                                    <div className="small text-white-50">Browser push notifications</div>
+                                </div>
+                            </div>
+                            <div className="form-check form-switch m-0">
+                                <input
+                                    className="form-check-input shadow-none cursor-pointer"
+                                    type="checkbox"
+                                    role="switch"
+                                    style={{ width: "3em", height: "1.5rem" }}
+                                    checked={settings.windowEnabled ?? true}
+                                    onChange={(e) => onUpdateSettings({ ...settings, windowEnabled: e.target.checked })}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Email Notifications Toggle */}
+                        <div className="d-flex align-items-center justify-content-between p-3 rounded-4 transition-all shadow-sm" style={{ backgroundColor: "rgba(255, 255, 255, 0.10)" }}>
+                            <div className="d-flex align-items-center gap-3">
+                                <div className={`p-2 rounded-3 ${settings.emailEnabled ? 'text-warning bg-warning bg-opacity-25' : 'text-white-50 bg-secondary bg-opacity-25'}`}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" className="bi bi-envelope" viewBox="0 0 16 16">
+                                        <path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v.217l7 4.2 7-4.2V4a1 1 0 0 0-1-1zm13 2.383-4.708 2.825L15 11.105zm-.034 6.876-5.64-3.471L8 9.583l-1.326-.795-5.64 3.471A1 1 0 0 0 2 13h12a1 1 0 0 0 .966-.741ZM1 11.105l4.708-2.897L1 5.383z"/>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <div className="fw-semibold">Email Notifications</div>
+                                    <div className="small text-white-50">
+                                        {userEmail ? (
+                                            <span className="text-success">{userEmail}</span>
+                                        ) : (
+                                            <span 
+                                                className="text-warning cursor-pointer text-decoration-underline"
+                                                onClick={onEmailClick}
+                                            >
+                                                Click to set email
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="form-check form-switch m-0">
+                                <input
+                                    className="form-check-input shadow-none cursor-pointer"
+                                    type="checkbox"
+                                    role="switch"
+                                    style={{ width: "3em", height: "1.5rem" }}
+                                    checked={settings.emailEnabled ?? false}
+                                    onChange={(e) => onUpdateSettings({ ...settings, emailEnabled: e.target.checked })}
+                                    disabled={!userEmail}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Notification Timing Section - Only show if email enabled */}
+                        {settings.emailEnabled && userEmail && (
+                            <div className="p-3 rounded-4 shadow-sm" style={{ backgroundColor: "rgba(255, 255, 255, 0.07)" }}>
+                                <div className="d-flex align-items-center gap-2 mb-3">
+                                    <ClockIcon />
+                                    <span className="fw-semibold">When to Notify</span>
+                                    <span className="badge bg-secondary ms-auto">{notificationTimes.length}/2</span>
+                                </div>
+                                {/* Current notification times */}
+                                <div className="d-flex flex-column gap-2 mb-3">
+                                    {notificationTimes.length === 0 ? (
+                                        <div className="text-white-50 small text-center py-2">
+                                            No notification times set. Add one below.
+                                        </div>
+                                    ) : (
+                                        notificationTimes.map((time, index) => (
+                                            <div 
+                                                key={time.minutes_before}
+                                                className="d-flex align-items-center justify-content-between p-2 px-3 rounded-3"
+                                                style={{ backgroundColor: "rgba(255, 255, 255, 0.1)" }}
+                                            >
+                                                <div className="d-flex align-items-center gap-2">
+                                                    <span className="badge bg-primary">{index + 1}</span>
+                                                    <span>{time.label || minutesToLabel(time.minutes_before)}</span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-sm btn-outline-danger border-0 rounded-circle p-1"
+                                                    onClick={() => handleRemoveNotificationTime(time.minutes_before)}
+                                                    title="Remove"
+                                                >
+                                                    <TrashIcon />
+                                                </button>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                                {/* Add notification time */}
+                                {canAddMore && (
+                                    <>
+                                        {!showTimePicker ? (
+                                            <button
+                                                type="button"
+                                                className="btn btn-outline-primary w-100 d-flex align-items-center justify-content-center gap-2 rounded-3"
+                                                onClick={() => setShowTimePicker(true)}
+                                            >
+                                                <PlusIcon /> Add Notification Time
+                                            </button>
+                                        ) : (
+                                            <div className="d-flex flex-column gap-2">
+                                                <div className="small text-white-50 mb-1">Select when to notify:</div>
+                                                <div className="d-flex flex-wrap gap-2">
+                                                    {NOTIFICATION_TIME_OPTIONS
+                                                        .filter(opt => !notificationTimes.some(t => t.minutes_before === opt.value))
+                                                        .map(opt => (
+                                                            <button
+                                                                key={opt.value}
+                                                                type="button"
+                                                                className="btn btn-sm btn-outline-light rounded-pill"
+                                                                onClick={() => handleAddNotificationTime(opt.value)}
+                                                            >
+                                                                {opt.label}
+                                                            </button>
+                                                        ))
+                                                    }
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-sm btn-link text-white-50 mt-1"
+                                                    onClick={() => setShowTimePicker(false)}
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        )}
+                        </>
                     )}
                 </div>
 
