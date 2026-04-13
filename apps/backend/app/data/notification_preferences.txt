@@ -1,0 +1,19 @@
+{
+  "users": {
+    "00000000-0000-0000-0000-000000000001": {
+      "email": "petch.jrw.chim@gmail.com",
+      "notifications_enabled": false,
+      "window_notifications_enabled": true,
+      "notification_times": [],
+      "updated_at": "2026-04-13T23:20:28.733461"
+    },
+    "00000000-0000-0000-0000-000000000002": {
+      "email": "petchfeat@gmail.com",
+      "notifications_enabled": false,
+      "window_notifications_enabled": true,
+      "notification_times": [],
+      "updated_at": "2026-04-13T23:21:06.159610"
+    }
+  },
+  "last_updated": "2026-04-13T23:21:06.159610"
+}
