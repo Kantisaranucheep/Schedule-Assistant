@@ -30,7 +30,7 @@ venv/
 ENV/
 env/
 .env.local
-
+.dev-env/
 # PyInstaller
 *.manifest
 *.spec
