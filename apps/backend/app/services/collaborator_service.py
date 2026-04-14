@@ -22,7 +22,7 @@ class CollaboratorService:
         self.db.add(invitation)
         await self.db.commit()
         await self.db.refresh(invitation)
-        return EventCollaborationInvitationRead.from_orm(invitation)
+        return EventCollaborationInvitationRead.model_validate(invitation)
 
     async def accept_invitation(self, invitation_id: UUID) -> EventCollaboratorRead:
         q = await self.db.execute(select(EventCollaborationInvitation).where(EventCollaborationInvitation.id == invitation_id))
@@ -36,7 +36,7 @@ class CollaboratorService:
         await self.db.commit()
         await self.db.refresh(collaborator)
         await self.db.refresh(invitation)
-        return EventCollaboratorRead.from_orm(collaborator)
+        return EventCollaboratorRead.model_validate(collaborator)
 
     async def decline_invitation(self, invitation_id: UUID) -> EventCollaborationInvitationRead:
         q = await self.db.execute(select(EventCollaborationInvitation).where(EventCollaborationInvitation.id == invitation_id))
@@ -47,11 +47,11 @@ class CollaboratorService:
         invitation.responded_at = datetime.utcnow()
         await self.db.commit()
         await self.db.refresh(invitation)
-        return EventCollaborationInvitationRead.from_orm(invitation)
+        return EventCollaborationInvitationRead.model_validate(invitation)
 
     async def list_event_collaborators(self, event_id: UUID) -> List[EventCollaboratorRead]:
         q = await self.db.execute(select(EventCollaborator).where(EventCollaborator.event_id == event_id))
-        return [EventCollaboratorRead.from_orm(row) for row in q.scalars().all()]
+        return [EventCollaboratorRead.model_validate(row) for row in q.scalars().all()]
 
     async def list_user_invitations(self, user_id: UUID) -> List[EventCollaborationInvitationWithDetailsRead]:
         query = (
@@ -67,7 +67,7 @@ class CollaboratorService:
         rows = result.all()
         return [
             EventCollaborationInvitationWithDetailsRead(
-                **EventCollaborationInvitationRead.from_orm(inv).dict(),
+                **EventCollaborationInvitationRead.model_validate(inv).model_dump(),
                 event_title=title,
                 event_date=start_time.isoformat(),
                 inviter_username=username

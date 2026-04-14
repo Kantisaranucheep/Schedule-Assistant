@@ -16,8 +16,7 @@ class EventCollaboratorRead(EventCollaboratorBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 class EventCollaborationInvitationBase(BaseModel):
     event_id: uuid.UUID
@@ -34,13 +33,11 @@ class EventCollaborationInvitationRead(EventCollaborationInvitationBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 class EventCollaborationInvitationWithDetailsRead(EventCollaborationInvitationRead):
     event_title: str
     event_date: str
     inviter_username: str
 
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
