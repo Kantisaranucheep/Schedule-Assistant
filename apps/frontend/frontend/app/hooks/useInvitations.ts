@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { fetchInvitations, acceptInvitation as apiAccept, declineInvitation as apiDecline, InvitationResponse } from "../services/collaborators.api";
 
+// Allow passing a callback to run after accepting invitation (e.g., reload events)
+type AfterAcceptCallback = (() => void) | undefined;
+
 const WS_BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/^http/, "ws");
 
-export function useInvitations() {
+export function useInvitations(afterAcceptCallback?: AfterAcceptCallback) {
     const [invitations, setInvitations] = useState<InvitationResponse[]>([]);
     const [loading, setLoading] = useState(false);
 
@@ -75,6 +78,9 @@ export function useInvitations() {
     const acceptInvitation = async (invitationId: string) => {
         await apiAccept(invitationId);
         setInvitations(prev => prev.filter(inv => inv.id !== invitationId));
+        if (afterAcceptCallback) {
+            afterAcceptCallback();
+        }
     };
 
     const declineInvitation = async (invitationId: string) => {

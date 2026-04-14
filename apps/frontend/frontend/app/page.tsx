@@ -63,7 +63,8 @@ export default function Home() {
     refetch 
   } = useEvents();
 
-  const { invitations, acceptInvitation, declineInvitation, refresh: refetchInvitations } = useInvitations();
+  // Pass refetch to useInvitations so events reload after accepting invitation
+  const { invitations, acceptInvitation, declineInvitation, refresh: refetchInvitations } = useInvitations(refetch);
 
   // Local events overlay (for immediate UI updates before API sync)
   const [localEvents, setLocalEvents] = useState<EventMap>({});
