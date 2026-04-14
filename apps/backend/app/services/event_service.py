@@ -4,11 +4,12 @@ from datetime import datetime, timezone as dt_timezone
 from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Event
+from app.models import Event, User, Calendar, EventCollaborator, EventCollaborationInvitation
 from app.schemas import EventCreate, EventUpdate
+from app.core.websockets import manager
 
 
 def ensure_timezone_aware(dt: datetime) -> datetime:
@@ -36,9 +37,28 @@ class EventService:
         end_date: Optional[datetime] = None,
     ) -> List[Event]:
         """Get events for a calendar, optionally filtered by date range."""
-        query = select(Event).where(
-            and_(Event.calendar_id == calendar_id, Event.status != "cancelled")
-        )
+        # Find user_id of calendar owner via a quick DB query
+        q = await self.db.execute(select(Calendar).where(Calendar.id == calendar_id))
+        calendar = q.scalar_one_or_none()
+        user_id = calendar.user_id if calendar else None
+
+        if user_id:
+            query = select(Event).where(
+                and_(
+                    or_(
+                        Event.calendar_id == calendar_id,
+                        Event.id.in_(
+                            select(EventCollaborator.event_id)
+                            .where(EventCollaborator.user_id == user_id)
+                        )
+                    ),
+                    Event.status != "cancelled"
+                )
+            )
+        else:
+            query = select(Event).where(
+                and_(Event.calendar_id == calendar_id, Event.status != "cancelled")
+            )
 
         if start_date:
             query = query.where(Event.end_time >= start_date)
@@ -74,7 +94,27 @@ class EventService:
 
     async def create(self, data: EventCreate) -> Event:
         """Create a new event with timezone-aware datetimes."""
-        event_data = data.model_dump(exclude={"timezone"})
+        
+        # 1. Validate usernames
+        usernames = data.collaborator_usernames or []
+        invitees = []
+        if usernames:
+            user_q = await self.db.execute(select(User).where(User.username.in_(usernames)))
+            found_users = user_q.scalars().all()
+            found_usernames = {u.username for u in found_users}
+            missing = [un for un in usernames if un not in found_usernames]
+            if missing:
+                # Fast fail, trigger 400
+                from fastapi import HTTPException
+                raise HTTPException(status_code=400, detail=f"Users not found: {', '.join(missing)}")
+            invitees = found_users
+
+        # 2. Extract calendar owner as inviter
+        q = await self.db.execute(select(Calendar).where(Calendar.id == data.calendar_id))
+        calendar = q.scalar_one_or_none()
+        inviter_id = calendar.user_id if calendar else None
+            
+        event_data = data.model_dump(exclude={"timezone", "collaborator_usernames"})
         
         # Ensure datetimes are timezone-aware
         event_data["start_time"] = ensure_timezone_aware(event_data["start_time"])
@@ -83,6 +123,19 @@ class EventService:
         event = Event(**event_data)
         self.db.add(event)
         await self.db.flush()
+        
+        # 3. Create invitations
+        if invitees and inviter_id:
+            for invitee in invitees:
+                invitation = EventCollaborationInvitation(
+                    event_id=event.id,
+                    inviter_id=inviter_id,
+                    invitee_id=invitee.id
+                )
+                self.db.add(invitation)
+                # 4. Fire WebSocket
+                await manager.send_personal_message({"type": "new_invitation"}, invitee.id)
+                
         await self.db.refresh(event)
         return event
 
@@ -92,11 +145,50 @@ class EventService:
         if not event:
             return None
 
-        update_data = data.model_dump(exclude_unset=True)
+        # 1. Validate usernames
+        usernames = data.collaborator_usernames or []
+        invitees = []
+        if usernames:
+            user_q = await self.db.execute(select(User).where(User.username.in_(usernames)))
+            found_users = user_q.scalars().all()
+            found_usernames = {u.username for u in found_users}
+            missing = [un for un in usernames if un not in found_usernames]
+            if missing:
+                # Fast fail, trigger 400
+                from fastapi import HTTPException
+                raise HTTPException(status_code=400, detail=f"Users not found: {', '.join(missing)}")
+            invitees = found_users
+
+        update_data = data.model_dump(exclude_unset=True, exclude={"collaborator_usernames"})
         for field, value in update_data.items():
             setattr(event, field, value)
 
         await self.db.flush()
+
+        # 2. Extract calendar owner as inviter
+        if invitees:
+            q = await self.db.execute(select(Calendar).where(Calendar.id == event.calendar_id))
+            calendar = q.scalar_one_or_none()
+            inviter_id = calendar.user_id if calendar else None
+            if inviter_id:
+                # Get existing invitations for this event
+                inv_q = await self.db.execute(
+                    select(EventCollaborationInvitation.invitee_id)
+                    .where(EventCollaborationInvitation.event_id == event.id)
+                )
+                existing_invitee_ids = set(inv_q.scalars().all())
+
+                for invitee in invitees:
+                    if invitee.id not in existing_invitee_ids:
+                        invitation = EventCollaborationInvitation(
+                            event_id=event.id,
+                            inviter_id=inviter_id,
+                            invitee_id=invitee.id
+                        )
+                        self.db.add(invitation)
+                        # Fire WebSocket
+                        await manager.send_personal_message({"type": "new_invitation"}, invitee.id)
+
         await self.db.refresh(event)
         return event
 

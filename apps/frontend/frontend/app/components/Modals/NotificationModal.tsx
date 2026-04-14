@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { NotificationSettings, NotificationTimePreference } from "../../types";
 import { NOTIFICATION_TIME_OPTIONS, minutesToLabel } from "../../services/settings.api";
+import { InvitationResponse } from "../../services/collaborators.api";
 
 interface NotificationModalProps {
     isOpen: boolean;
@@ -9,6 +10,9 @@ interface NotificationModalProps {
     onUpdateSettings: (settings: NotificationSettings) => void;
     userEmail: string;
     onEmailClick: () => void;
+    invitations: InvitationResponse[];
+    onAcceptInvitation: (id: string) => Promise<void>;
+    onDeclineInvitation: (id: string) => Promise<void>;
 }
 
 
@@ -18,14 +22,12 @@ export default function NotificationModal({
     settings,
     onUpdateSettings,
     userEmail,
-    onEmailClick
+    onEmailClick,
+    invitations,
+    onAcceptInvitation,
+    onDeclineInvitation
 }: NotificationModalProps) {
     const [showTimePicker, setShowTimePicker] = useState(false);
-    // Demo invites state (replace with real data later)
-    const [invites, setInvites] = useState([
-        { id: 1, eventTitle: "Team Meeting", inviter: "alice", eventDate: "2026-04-15" },
-        { id: 2, eventTitle: "Project Kickoff", inviter: "bob", eventDate: "2026-04-20" },
-    ]);
     const [activeTab, setActiveTab] = useState<'invites' | 'settings'>('invites');
 
     if (!isOpen) return null;
@@ -172,17 +174,17 @@ export default function NotificationModal({
                                 <svg width="20" height="20" fill="currentColor" className="bi bi-people" viewBox="0 0 16 16"><path d="M13 7a2 2 0 1 0-4 0 2 2 0 0 0 4 0zM6 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm7 8a3 3 0 0 0-2.824-2H5.824A3 3 0 0 0 3 16h10zm-9.995-.15A2.01 2.01 0 0 1 5.824 14h4.352a2.01 2.01 0 0 1 2.819 1.85H3.005z"/></svg>
                                 Invitations
                             </div>
-                            {invites.length === 0 ? (
+                            {invitations.length === 0 ? (
                                 <div className="small text-secondary text-center py-4">No new invitations</div>
                             ) : (
                                 <div className="d-flex flex-column gap-3 mb-2">
-                                    {invites.map((invite) => (
+                                    {invitations.map((invite) => (
                                         <div key={invite.id} className="rounded-4 shadow-sm p-3 bg-white bg-opacity-10 border border-secondary border-opacity-25 d-flex flex-column gap-2 position-relative">
-                                            <div className="fw-bold text-white fs-5">{invite.eventTitle}</div>
-                                            <div className="small text-secondary">Invited by <span className="fw-semibold">{invite.inviter}</span> for <span className="fw-semibold">{invite.eventDate}</span></div>
+                                            <div className="fw-bold text-white fs-5">{invite.event_title}</div>
+                                            <div className="small text-secondary">Invited by <span className="fw-semibold">{invite.inviter_username}</span> for <span className="fw-semibold">{new Date(invite.event_date).toLocaleString()}</span></div>
                                             <div className="d-flex gap-2 mt-1">
-                                                <button className="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" style={{minWidth: 90}} onClick={() => setInvites(invites.filter(i => i.id !== invite.id))}>Accept</button>
-                                                <button className="btn btn-outline-light rounded-pill px-4 fw-bold border shadow-sm" style={{minWidth: 90}} onClick={() => setInvites(invites.filter(i => i.id !== invite.id))}>Decline</button>
+                                                <button className="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" style={{minWidth: 90}} onClick={() => onAcceptInvitation(invite.id)}>Accept</button>
+                                                <button className="btn btn-outline-light rounded-pill px-4 fw-bold border shadow-sm" style={{minWidth: 90}} onClick={() => onDeclineInvitation(invite.id)}>Decline</button>
                                             </div>
                                         </div>
                                     ))}

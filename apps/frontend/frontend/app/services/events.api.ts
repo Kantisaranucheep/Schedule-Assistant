@@ -52,6 +52,7 @@ export interface EventCreateRequest {
   notes?: string;
   category_id?: string;
   timezone?: string; // IANA timezone e.g. "Asia/Bangkok"
+  collaborator_usernames?: string[];
 }
 
 export interface TaskCreateRequest {
@@ -87,6 +88,7 @@ export interface EventUpdateRequest {
   notes?: string;
   category_id?: string;
   timezone?: string;
+  collaborator_usernames?: string[];
 }
 
 /**

@@ -32,6 +32,7 @@ import EmailModal from "./components/Modals/EmailModal";
 import EventModal from "./components/Modals/EventModal";
 import ViewEventModal from "./components/Modals/ViewEventModal";
 import { useEvents } from "./hooks/useEvents";
+import { useInvitations } from "./hooks/useInvitations";
 
 
 
@@ -61,6 +62,8 @@ export default function Home() {
     categories, 
     refetch 
   } = useEvents();
+
+  const { invitations, acceptInvitation, declineInvitation, refresh: refetchInvitations } = useInvitations();
 
   // Local events overlay (for immediate UI updates before API sync)
   const [localEvents, setLocalEvents] = useState<EventMap>({});
@@ -370,6 +373,7 @@ export default function Home() {
         newItem.categoryId || "",
         newItem.location || "",
         newItem.notes || "",
+        newItem.collaborators || [],
         realTodayKey,
         isTodaySelected
       );
@@ -415,6 +419,7 @@ export default function Home() {
         newItem.categoryId || "",
         newItem.location || "",
         newItem.notes || "",
+        newItem.collaborators || [],
         realTodayKey,
         targetDate === realTodayKey
       );
@@ -595,6 +600,12 @@ export default function Home() {
               setNotificationsOpen(false);
               setEmailModalOpen(true);
             }}
+            invitations={invitations}
+            onAcceptInvitation={async (id) => {
+              await acceptInvitation(id);
+              refetch();
+            }}
+            onDeclineInvitation={declineInvitation}
           />
 
           {/* ===== EMAIL SETTINGS OVERLAY ===== */}

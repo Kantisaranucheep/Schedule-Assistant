@@ -6,6 +6,7 @@ from app.core.database import get_db
 from app.schemas.collaborator import (
     EventCollaborationInvitationCreate,
     EventCollaborationInvitationRead,
+    EventCollaborationInvitationWithDetailsRead,
     EventCollaboratorRead,
 )
 from app.services.collaborator_service import CollaboratorService
@@ -44,7 +45,7 @@ async def list_event_collaborators(
     service = CollaboratorService(db)
     return await service.list_event_collaborators(event_id)
 
-@router.get("/invitations/{user_id}", response_model=List[EventCollaborationInvitationRead])
+@router.get("/invitations/{user_id}", response_model=List[EventCollaborationInvitationWithDetailsRead])
 async def list_user_invitations(
     user_id: UUID,
     db: AsyncSession = Depends(get_db),

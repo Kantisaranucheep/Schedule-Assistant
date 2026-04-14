@@ -17,6 +17,7 @@ class EventBase(BaseModel):
     location: Optional[str] = Field(default=None, max_length=500)
     notes: Optional[str] = None
     category_id: Optional[UUID] = None
+    collaborator_usernames: Optional[list[str]] = None
 
 
 class EventCreate(EventBase):

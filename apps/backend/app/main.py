@@ -21,8 +21,8 @@ from app.routers import (
     settings_router,
     auth_router,
 )
-# Import new chat router (replaces old agent/chat system)
 from app.chat.router import router as chat_agent_router
+from app.routers.ws import router as ws_router
 # Import notification scheduler
 from app.services import start_notification_scheduler, stop_notification_scheduler, get_email_service
 
@@ -93,6 +93,7 @@ app.include_router(chat_agent_router)  # New chat agent system
 app.include_router(settings_router)
 app.include_router(auth_router)
 app.include_router(collaborators_router)
+app.include_router(ws_router)
 
 
 @app.get("/")

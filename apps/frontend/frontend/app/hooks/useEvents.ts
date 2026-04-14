@@ -143,6 +143,7 @@ export function useEvents() {
     mCategoryId: string,
     mLocation: string,
     mNotes: string,
+    mCollaborators: string[],
     realTodayKey: string,
     isTodaySelected: boolean
   ): Promise<{ success: boolean; error?: string }> {
@@ -165,6 +166,7 @@ export function useEvents() {
             category_id: mCategoryId || undefined,
             location: mLocation.trim() || undefined,
             notes: mNotes.trim() || undefined,
+            collaborator_usernames: mCollaborators.length > 0 ? mCollaborators : undefined,
           };
 
           await createTask(taskRequest);
@@ -223,6 +225,7 @@ export function useEvents() {
             notes: mNotes.trim() || undefined,
             category_id: mCategoryId || undefined,
             timezone: getUserTimezone(),
+            collaborator_usernames: mCollaborators.length > 0 ? mCollaborators : undefined,
           };
 
           const createdEvent = await createEvent(eventRequest, true);
@@ -253,6 +256,7 @@ export function useEvents() {
       color: color,
       location: mLocation.trim(),
       notes: mNotes.trim(),
+      collaborators: mCollaborators,
     };
 
     setNextLocalId((x) => x + 1);
@@ -282,6 +286,7 @@ export function useEvents() {
     mCategoryId: string,
     mLocation: string,
     mNotes: string,
+    mCollaborators: string[],
     realTodayKey: string,
     isTodaySelected: boolean
   ): Promise<{ success: boolean; error?: string }> {
@@ -306,6 +311,7 @@ export function useEvents() {
           category_id: mCategoryId || undefined,
           location: mLocation.trim() || undefined,
           notes: mNotes.trim() || undefined,
+          collaborator_usernames: mCollaborators.length > 0 ? mCollaborators : undefined,
         };
 
         await updateTask(eventId, taskUpdate);
@@ -363,6 +369,7 @@ export function useEvents() {
           notes: mNotes.trim() || undefined,
           category_id: mCategoryId || undefined,
           timezone: getUserTimezone(),
+          collaborator_usernames: mCollaborators.length > 0 ? mCollaborators : undefined,
         };
 
         await updateEvent(eventId, eventUpdate);

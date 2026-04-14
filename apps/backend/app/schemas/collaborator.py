@@ -36,3 +36,11 @@ class EventCollaborationInvitationRead(EventCollaborationInvitationBase):
 
     class Config:
         orm_mode = True
+
+class EventCollaborationInvitationWithDetailsRead(EventCollaborationInvitationRead):
+    event_title: str
+    event_date: str
+    inviter_username: str
+
+    class Config:
+        orm_mode = True
