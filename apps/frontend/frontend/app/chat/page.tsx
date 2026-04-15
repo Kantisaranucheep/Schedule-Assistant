@@ -2,12 +2,14 @@
 
 import React, { useState, useEffect } from "react";
 import { ChatContainer } from "../components/chat";
+import PersonaSettings from "../components/PersonaSettings";
 import { getChatHealth, ChatHealthResponse } from "../services/chat-agent.api";
 import Link from "next/link";
 
 export default function ChatPage() {
   const [health, setHealth] = useState<ChatHealthResponse | null>(null);
   const [healthLoading, setHealthLoading] = useState(true);
+  const [showPersonaModal, setShowPersonaModal] = useState(false);
 
   // Check health on mount
   useEffect(() => {
@@ -33,6 +35,28 @@ export default function ChatPage() {
 
   return (
     <div className="min-vh-100" style={{ backgroundColor: "#fbfcfd" }}>
+      {/* Persona Modal */}
+      {showPersonaModal && (
+        <div 
+          className="modal d-block" 
+          style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowPersonaModal(false);
+          }}
+        >
+          <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div className="modal-content border-0 rounded-4 shadow-lg">
+              <div className="modal-body p-4" style={{ maxHeight: "80vh", overflowY: "auto" }}>
+                <PersonaSettings 
+                  isModal={true} 
+                  onClose={() => setShowPersonaModal(false)} 
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Navigation */}
       <nav className="navbar navbar-light sticky-top" style={{ backgroundColor: "rgba(255, 255, 255, 0.8)", backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
         <div className="container">
@@ -47,6 +71,20 @@ export default function ChatPage() {
           </Link>
 
           <div className="d-flex align-items-center gap-3">
+            {/* Persona Settings Button */}
+            <button
+              onClick={() => setShowPersonaModal(true)}
+              className="btn btn-outline-primary rounded-pill d-flex align-items-center gap-2 px-3 py-2"
+              style={{ fontSize: "12px" }}
+              title="Set up your persona for personalized priorities"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </svg>
+              <span className="fw-bold">MY PERSONA</span>
+            </button>
+
             <div className="d-flex align-items-center gap-2">
               <span className="text-muted" style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.5px" }}>STATUS:</span>
               {healthLoading ? (
@@ -127,9 +165,16 @@ export default function ChatPage() {
               icon: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15",
               color: "#6f42c1",
               bg: "rgba(111, 66, 193, 0.08)"
+            },
+            {
+              title: "Set Priorities",
+              text: "Tell us about yourself for smarter scheduling",
+              icon: "M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z",
+              color: "#fd7e14",
+              bg: "rgba(253, 126, 20, 0.08)"
             }
           ].map((card, idx) => (
-            <div className="col-md-4" key={idx}>
+            <div className="col-md-3" key={idx}>
               <div className="card h-100 border-0 shadow-sm rounded-4 p-2 transition-all hover-lift">
                 <div className="card-body d-flex flex-column align-items-center text-center">
                   <div className="rounded-circle d-flex align-items-center justify-content-center mb-3" style={{ width: 48, height: 48, backgroundColor: card.bg, color: card.color }}>

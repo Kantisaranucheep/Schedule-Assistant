@@ -2,6 +2,7 @@
 
 from .base import BaseModel
 from .user import User, UserSettings
+from .user_profile import UserProfile
 from .calendar import Calendar, EventType
 from .category import Category
 from .event import Event
@@ -13,6 +14,7 @@ __all__ = [
     "BaseModel",
     "User",
     "UserSettings",
+    "UserProfile",
     "Calendar",
     "EventType",
     "Category",

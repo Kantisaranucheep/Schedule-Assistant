@@ -7,6 +7,16 @@ from .task import TaskCreate, TaskUpdate, TaskResponse
 from .chat import ChatRequest, ChatResponse, ChatSessionResponse, ChatMessageResponse
 from .settings import UserSettingsCreate, UserSettingsUpdate, UserSettingsResponse
 from .auth import LoginRequest, LoginResponse
+from .user_profile import (
+    UserStoryRequest,
+    PriorityUpdateRequest,
+    StrategyUpdateRequest,
+    PriorityExtractionResponse,
+    UserProfileResponse,
+    UserProfileWithExtractionResponse,
+    EventPriorityRequest,
+    EventPriorityResponse,
+)
 
 __all__ = [
     "CalendarCreate",
@@ -30,4 +40,12 @@ __all__ = [
     "UserSettingsResponse",
     "LoginRequest",
     "LoginResponse",
+    "UserStoryRequest",
+    "PriorityUpdateRequest",
+    "StrategyUpdateRequest",
+    "PriorityExtractionResponse",
+    "UserProfileResponse",
+    "UserProfileWithExtractionResponse",
+    "EventPriorityRequest",
+    "EventPriorityResponse",
 ]

@@ -10,7 +10,7 @@ from app.core.config import get_settings
 from app.core.database import engine, Base
 from app.core.timezone import get_system_timezone_name, SYSTEM_TIMEZONE
 # Import models to register with Base.metadata
-from app.models import User, UserSettings, Calendar, EventType, Category, Event, Task, ChatSession, ChatMessage
+from app.models import User, UserSettings, UserProfile, Calendar, EventType, Category, Event, Task, ChatSession, ChatMessage
 from app.routers import (
     health_router,
     calendars_router,
@@ -20,6 +20,7 @@ from app.routers import (
     availability_router,
     settings_router,
     auth_router,
+    user_profile_router,
 )
 from app.chat.router import router as chat_agent_router
 from app.routers.ws import router as ws_router
@@ -93,6 +94,7 @@ app.include_router(chat_agent_router)  # New chat agent system
 app.include_router(settings_router)
 app.include_router(auth_router)
 app.include_router(collaborators_router)
+app.include_router(user_profile_router)  # User profile/persona system
 app.include_router(ws_router)
 
 

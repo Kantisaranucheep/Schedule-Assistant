@@ -12,6 +12,7 @@ from .base import BaseModel
 if TYPE_CHECKING:
     from .calendar import Calendar
     from .chat import ChatSession
+    from .user_profile import UserProfile
 
 
 class User(BaseModel):
@@ -31,6 +32,9 @@ class User(BaseModel):
     )
     settings: Mapped[Optional["UserSettings"]] = relationship(
         "UserSettings", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
+    profile: Mapped[Optional["UserProfile"]] = relationship(
+        "UserProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
     chat_sessions: Mapped[List["ChatSession"]] = relationship(
         "ChatSession", back_populates="user", cascade="all, delete-orphan"
