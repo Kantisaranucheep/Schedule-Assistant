@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Event, Calendar
+from app.models import Event, Calendar, UserProfile
 
 
 # Default user and calendar IDs (hardcoded for simplicity)
@@ -381,6 +381,29 @@ class EventRepository:
             return all_events
         
         return []
+    
+    async def get_user_priority_map(self, user_id: Optional[uuid.UUID] = None) -> Dict[str, int]:
+        """
+        Get the user's event-type priority mapping from their profile.
+        
+        Returns merged priorities (extracted + defaults).
+        Falls back to default weights if no profile exists.
+        """
+        uid = user_id or DEFAULT_USER_ID
+        result = await self.db.execute(
+            select(UserProfile).where(UserProfile.user_id == uid)
+        )
+        profile = result.scalar_one_or_none()
+        
+        if profile:
+            return profile.merge_priorities()
+        
+        # Fallback default priorities
+        return {
+            "meeting": 7, "exam": 10, "study": 8, "deadline": 10,
+            "appointment": 7, "class": 8, "work": 8, "exercise": 5,
+            "social": 4, "party": 3, "personal": 5, "travel": 6, "other": 5,
+        }
     
     def _event_to_dict(self, event: Event) -> Dict[str, Any]:
         """Convert Event model to dictionary format for Prolog/chat."""

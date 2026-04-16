@@ -21,6 +21,7 @@ from app.routers import (
     settings_router,
     auth_router,
     user_profile_router,
+    scheduling_router,
 )
 from app.chat.router import router as chat_agent_router
 from app.routers.ws import router as ws_router
@@ -95,6 +96,7 @@ app.include_router(settings_router)
 app.include_router(auth_router)
 app.include_router(collaborators_router)
 app.include_router(user_profile_router)  # User profile/persona system
+app.include_router(scheduling_router)   # Priority-aware scheduling with A*
 app.include_router(ws_router)
 
 

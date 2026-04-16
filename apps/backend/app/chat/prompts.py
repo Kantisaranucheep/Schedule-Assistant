@@ -481,6 +481,70 @@ Now determine what the user wants to change:
 """
 
 
+# =============================================================================
+# Phase 2: RESCHEDULE STRATEGY — Parse user's optimization preference
+# =============================================================================
+RESCHEDULE_STRATEGY_PROMPT = """You are a JSON converter. Your ONLY job is to determine the user's scheduling strategy preference.
+
+RULES:
+1. ONLY output valid JSON - no explanations
+2. Match user input to one of these 3 strategies:
+
+Strategy 1: "minimize_moves" - User wants the simplest solution with fewest changes
+Keywords: simple, easy, fewest changes, minimal, least disruption, quick, fast
+
+Strategy 2: "maximize_quality" - User wants to protect important/high-priority events
+Keywords: important, priority, protect, best quality, optimal, don't move important, keep important
+
+Strategy 3: "balanced" - User wants a balanced approach (default)
+Keywords: balanced, whatever works, you decide, don't care, any, default, both
+
+OUTPUT FORMAT:
+{{
+    "strategy": "minimize_moves" | "maximize_quality" | "balanced"
+}}
+
+EXAMPLES:
+User: "keep it simple" -> {{"strategy": "minimize_moves"}}
+User: "protect my important events" -> {{"strategy": "maximize_quality"}}
+User: "balanced" -> {{"strategy": "balanced"}}
+User: "whatever works" -> {{"strategy": "balanced"}}
+User: "1" -> {{"strategy": "minimize_moves"}}
+User: "2" -> {{"strategy": "maximize_quality"}}
+User: "3" -> {{"strategy": "balanced"}}
+User: "fewest moves" -> {{"strategy": "minimize_moves"}}
+
+Now determine the user's strategy preference:
+"""
+
+
+# =============================================================================
+# Phase 2: RESCHEDULE OPTION SELECTION — Parse which option user picks
+# =============================================================================
+RESCHEDULE_OPTION_PROMPT = """You are a JSON converter. Your ONLY job is to determine which reschedule option the user selected.
+
+RULES:
+1. ONLY output valid JSON - no explanations
+2. User selects by number (1, 2, 3) or by saying "first", "second", "third"
+3. User can also say "back" to go back
+
+OUTPUT FORMAT:
+{{
+    "choice": 1 | 2 | 3 | "back"
+}}
+
+EXAMPLES:
+User: "1" -> {{"choice": 1}}
+User: "the first one" -> {{"choice": 1}}
+User: "option 2" -> {{"choice": 2}}
+User: "3" -> {{"choice": 3}}
+User: "go back" -> {{"choice": "back"}}
+User: "second" -> {{"choice": 2}}
+
+Now determine the user's selection:
+"""
+
+
 def build_intent_prompt(user_message: str) -> str:
     """Build the intent parsing prompt with current date context."""
     from datetime import timedelta
@@ -612,3 +676,13 @@ def build_edit_field_prompt(user_message: str) -> str:
     )
     
     return prompt + f"\nUser: \"{user_message}\"\nOutput:"
+
+
+def build_reschedule_strategy_prompt(user_message: str) -> str:
+    """Build the reschedule strategy parsing prompt."""
+    return RESCHEDULE_STRATEGY_PROMPT + f"\nUser: \"{user_message}\"\nOutput:"
+
+
+def build_reschedule_option_prompt(user_message: str) -> str:
+    """Build the reschedule option selection parsing prompt."""
+    return RESCHEDULE_OPTION_PROMPT + f"\nUser: \"{user_message}\"\nOutput:"

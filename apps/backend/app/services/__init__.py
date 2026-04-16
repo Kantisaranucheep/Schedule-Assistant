@@ -15,6 +15,7 @@ from .notification_scheduler import (
     stop_notification_scheduler
 )
 from .priority_extractor import PriorityExtractorService, PriorityExtractionResult
+from .scheduling_service import SchedulingService
 
 __all__ = [
     "CalendarService",
@@ -33,4 +34,5 @@ __all__ = [
     "stop_notification_scheduler",
     "PriorityExtractorService",
     "PriorityExtractionResult",
+    "SchedulingService",
 ]

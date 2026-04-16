@@ -92,16 +92,48 @@ class FreeRange:
         return self.duration_minutes() >= duration_minutes
 
 
+@dataclass
+class RescheduleOption:
+    """A rescheduling suggestion from the constraint solver."""
+    action: str  # 'move_new', 'move_existing', 'no_conflict'
+    description: str
+    cost: float
+    moves: List[Dict[str, Any]]  # List of {event_id, title, new_start_hour, new_start_min, new_end_hour, new_end_min}
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "action": self.action,
+            "description": self.description,
+            "cost": self.cost,
+            "moves": self.moves,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "RescheduleOption":
+        return cls(
+            action=data["action"],
+            description=data["description"],
+            cost=data["cost"],
+            moves=data.get("moves", []),
+        )
+
+
 class PrologService:
     """Service for Prolog-based scheduling logic."""
     
     def __init__(self):
         self._prolog = None
         self._initialized = False
+        self._constraint_solver_loaded = False
         self._prolog_file = os.path.join(
             os.path.dirname(__file__), 
             "prolog", 
             "scheduler.pl"
+        )
+        self._constraint_solver_file = os.path.join(
+            os.path.dirname(__file__),
+            "prolog",
+            "constraint_solver.pl"
         )
     
     def _ensure_initialized(self) -> bool:
@@ -116,6 +148,12 @@ class PrologService:
             self._prolog = Prolog()
             self._prolog.consult(self._prolog_file)
             self._initialized = True
+            # Also try to load constraint solver
+            try:
+                self._prolog.consult(self._constraint_solver_file)
+                self._constraint_solver_loaded = True
+            except Exception as e:
+                print(f"Constraint solver not loaded (will use Python fallback): {e}")
             return True
         except Exception as e:
             print(f"Failed to initialize Prolog: {e}")
@@ -705,6 +743,271 @@ class PrologService:
             ))
         
         return free_ranges
+    
+    # =========================================================================
+    # Phase 2: Constraint Solver — Reschedule Suggestions
+    # =========================================================================
+    
+    def suggest_reschedule_options(
+        self,
+        new_event: Dict[str, Any],
+        existing_events: List[Dict[str, Any]],
+        strategy: str = "balanced",
+        min_hour: int = 6,
+        min_minute: int = 0,
+        max_hour: int = 23,
+        max_minute: int = 0,
+        priority_map: Optional[Dict[str, int]] = None,
+    ) -> List[RescheduleOption]:
+        """
+        Use the Phase 2 constraint solver to suggest up to 3 reschedule options.
+        
+        Args:
+            new_event: Dict with id, title, start_hour, start_minute, end_hour, end_minute
+            existing_events: List of existing event dicts on the same day
+            strategy: 'minimize_moves', 'maximize_quality', or 'balanced'
+            min_hour/min_minute: Earliest allowed time
+            max_hour/max_minute: Latest allowed time
+            priority_map: Event-type -> weight mapping from user persona (1-10 scale)
+            
+        Returns:
+            List of RescheduleOption sorted by cost (best first)
+        """
+        return self._suggest_reschedule_python(
+            new_event, existing_events, strategy,
+            min_hour, min_minute, max_hour, max_minute,
+            priority_map=priority_map,
+        )
+    
+    def _suggest_reschedule_python(
+        self,
+        new_event: Dict[str, Any],
+        existing_events: List[Dict[str, Any]],
+        strategy: str,
+        min_hour: int,
+        min_minute: int,
+        max_hour: int,
+        max_minute: int,
+        priority_map: Optional[Dict[str, int]] = None,
+    ) -> List[RescheduleOption]:
+        """
+        Python implementation of suggest_reschedule_options.
+        Mirrors the A*-based logic from constraint_solver.pl.
+        
+        Phase 3: Uses priority_map from user persona to assign event priorities.
+        """
+        new_start = new_event["start_hour"] * 60 + new_event.get("start_minute", 0)
+        new_end = new_event["end_hour"] * 60 + new_event.get("end_minute", 0)
+        new_duration = new_end - new_start
+        new_title = new_event.get("title", "New event")
+        new_priority = self._resolve_priority(new_title, new_event.get("priority"), priority_map)
+        
+        min_start = min_hour * 60 + min_minute
+        max_end = max_hour * 60 + max_minute
+        
+        # Find conflicting events
+        conflicts = []
+        for evt in existing_events:
+            e_start = evt["start_hour"] * 60 + evt.get("start_minute", 0)
+            e_end = evt["end_hour"] * 60 + evt.get("end_minute", 0)
+            if new_start < e_end and new_end > e_start:
+                conflicts.append(evt)
+        
+        if not conflicts:
+            return [RescheduleOption(
+                action="no_conflict",
+                description="No conflicts detected",
+                cost=0,
+                moves=[],
+            )]
+        
+        options: List[RescheduleOption] = []
+        
+        # --- Option A: Move the NEW event to a nearby free slot ---
+        all_busy = []
+        for evt in existing_events:
+            e_start = evt["start_hour"] * 60 + evt.get("start_minute", 0)
+            e_end = evt["end_hour"] * 60 + evt.get("end_minute", 0)
+            all_busy.append((e_start, e_end))
+        all_busy.sort()
+        
+        # Generate candidate slots (30-min granularity) sorted by proximity
+        candidates = []
+        step = 30
+        slot_start = min_start
+        while slot_start + new_duration <= max_end:
+            slot_end = slot_start + new_duration
+            # Check no overlap with any existing event
+            has_overlap = any(
+                slot_start < be and slot_end > bs for bs, be in all_busy
+            )
+            if not has_overlap:
+                displacement = abs(slot_start - new_start)
+                disp_cost = displacement / 60.0 * 2
+                # Soft cost: preferred time bonus
+                soft_cost = self._calc_soft_cost(slot_start, slot_end, all_busy)
+                score = disp_cost + soft_cost
+                candidates.append((score, slot_start, slot_end))
+            slot_start += step
+        
+        candidates.sort()
+        
+        # Add top 2 "move new event" options
+        for i, (score, s_start, s_end) in enumerate(candidates[:2]):
+            s_sh, s_sm = divmod(s_start, 60)
+            s_eh, s_em = divmod(s_end, 60)
+            # Apply strategy weighting
+            adj_score = self._apply_strategy_weight(score, new_priority, strategy, is_new_event=True)
+            options.append(RescheduleOption(
+                action="move_new",
+                description=f'Move "{new_title}" to {s_sh:02d}:{s_sm:02d}-{s_eh:02d}:{s_em:02d}',
+                cost=adj_score,
+                moves=[{
+                    "event_id": new_event.get("id", "new"),
+                    "title": new_title,
+                    "new_start_hour": s_sh,
+                    "new_start_minute": s_sm,
+                    "new_end_hour": s_eh,
+                    "new_end_minute": s_em,
+                }],
+            ))
+        
+        # --- Option B: Move each conflicting event to make room ---
+        # Build busy list that includes the new event (as if placed)
+        busy_with_new = all_busy + [(new_start, new_end)]
+        busy_with_new.sort()
+        
+        for conflict_evt in conflicts:
+            c_id = conflict_evt.get("id", "unknown")
+            c_title = conflict_evt.get("title", "Event")
+            c_start = conflict_evt["start_hour"] * 60 + conflict_evt.get("start_minute", 0)
+            c_end = conflict_evt["end_hour"] * 60 + conflict_evt.get("end_minute", 0)
+            c_duration = c_end - c_start
+            c_priority = self._resolve_priority(c_title, conflict_evt.get("priority"), priority_map)
+            
+            # Build busy list excluding this conflict but including new event
+            other_busy = [(bs, be) for bs, be in all_busy 
+                          if not (bs == c_start and be == c_end)]
+            other_busy.append((new_start, new_end))
+            other_busy.sort()
+            
+            # Find best slot for this conflicting event
+            best = None
+            slot_start = min_start
+            while slot_start + c_duration <= max_end:
+                slot_end = slot_start + c_duration
+                has_overlap = any(
+                    slot_start < be and slot_end > bs for bs, be in other_busy
+                )
+                if not has_overlap:
+                    displacement = abs(slot_start - c_start)
+                    disp_cost = displacement / 60.0 * 2
+                    soft_cost = self._calc_soft_cost(slot_start, slot_end, other_busy)
+                    score = disp_cost + soft_cost + c_priority * 0.3
+                    if best is None or score < best[0]:
+                        best = (score, slot_start, slot_end)
+                slot_start += step
+            
+            if best:
+                score, s_start, s_end = best
+                s_sh, s_sm = divmod(s_start, 60)
+                s_eh, s_em = divmod(s_end, 60)
+                adj_score = self._apply_strategy_weight(score, c_priority, strategy, is_new_event=False)
+                options.append(RescheduleOption(
+                    action="move_existing",
+                    description=f'Move "{c_title}" to {s_sh:02d}:{s_sm:02d}-{s_eh:02d}:{s_em:02d}, keep "{new_title}" at original time',
+                    cost=adj_score,
+                    moves=[{
+                        "event_id": c_id,
+                        "title": c_title,
+                        "new_start_hour": s_sh,
+                        "new_start_minute": s_sm,
+                        "new_end_hour": s_eh,
+                        "new_end_minute": s_em,
+                    }],
+                ))
+        
+        # Sort by cost and return top 3
+        options.sort(key=lambda o: o.cost)
+        return options[:3]
+    
+    def _calc_soft_cost(self, start_min: int, end_min: int, busy_intervals: List[tuple]) -> float:
+        """Calculate soft constraint cost (buffer proximity + overload)."""
+        cost = 0.0
+        # Buffer proximity: penalty if < 15 min gap to neighboring events
+        for bs, be in busy_intervals:
+            if 0 < start_min - be < 15:
+                cost += 3.0
+            if 0 < bs - end_min < 15:
+                cost += 3.0
+        # Daily overload: penalize if >6 events
+        num_events = len(busy_intervals)
+        if num_events > 8:
+            cost += (num_events - 8) * 5
+        elif num_events > 6:
+            cost += (num_events - 6) * 2
+        return cost
+    
+    def _apply_strategy_weight(
+        self, base_cost: float, priority: int, strategy: str, is_new_event: bool
+    ) -> float:
+        """Apply strategy weighting as per constraint_solver.pl pick_best_option.
+        
+        Phase 3 - Strategy behavior:
+        - minimize_moves: Favor moving the fewest events (prefer moving new event only)
+        - maximize_quality: Protect high-priority events — move low-priority events first.
+          Uses persona-derived priority (1-10). Higher priority = much more expensive to move.
+        - balanced: Weighted compromise of moves + quality
+        """
+        if strategy == "minimize_moves":
+            if is_new_event:
+                return base_cost * 0.7  # Favor moving just the new event
+            return base_cost * 1.3
+        elif strategy == "maximize_quality":
+            # Priority is 1-10. High-priority events should be very costly to move.
+            # Low-priority events (1-3) get cost reduction; high-priority (8-10) get steep penalty.
+            priority_factor = priority / 10.0  # 0.1 – 1.0
+            if is_new_event:
+                # High-priority new event: expensive to move away from preferred time
+                # Low-priority new event: cheap to relocate
+                return base_cost * (0.3 + priority_factor * 1.7)  # 0.3 (low-pri) to 2.0 (high-pri)
+            else:
+                # Existing event: high-priority = very expensive to move, low-priority = cheap
+                return base_cost * (0.3 + priority_factor * 2.7)  # 0.3 (low-pri) to 3.0 (high-pri)
+        elif strategy == "balanced":
+            # Mild priority bias + mild move-count bias
+            priority_factor = priority / 10.0
+            if is_new_event:
+                return base_cost * (0.7 + priority_factor * 0.5)  # 0.7 – 1.2
+            else:
+                return base_cost * (0.8 + priority_factor * 0.7)  # 0.8 – 1.5
+        return base_cost
+    
+    def _resolve_priority(
+        self,
+        title: str,
+        explicit_priority: Optional[int],
+        priority_map: Optional[Dict[str, int]],
+    ) -> int:
+        """Resolve event priority using persona's priority_map.
+        
+        Matches the event title against known event-type keywords
+        in the user's priority_map. Falls back to explicit_priority or 5.
+        """
+        if priority_map:
+            title_lower = title.lower()
+            best_match_priority = None
+            # Check each keyword in the priority_map against the event title
+            for event_type, weight in priority_map.items():
+                if event_type.lower() in title_lower:
+                    if best_match_priority is None or weight > best_match_priority:
+                        best_match_priority = weight
+            if best_match_priority is not None:
+                return best_match_priority
+        
+        if explicit_priority is not None:
+            return explicit_priority
+        return 5
     
     def is_available(self) -> bool:
         """Check if Prolog service is available."""

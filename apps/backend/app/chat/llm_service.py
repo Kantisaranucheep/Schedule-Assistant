@@ -22,6 +22,8 @@ from app.chat.prompts import (
     build_field_collection_prompt,
     build_confirmation_prompt,
     build_edit_field_prompt,
+    build_reschedule_strategy_prompt,
+    build_reschedule_option_prompt,
 )
 
 
@@ -255,6 +257,62 @@ class LLMService:
             return False, None, f"Invalid field type: {field}"
         
         return True, data, ""
+    
+    async def parse_reschedule_strategy(self, user_message: str) -> Tuple[bool, Optional[str], str]:
+        """
+        Parse reschedule strategy preference from user.
+        
+        Returns:
+            Tuple of (success, strategy_name, error_message)
+        """
+        prompt = build_reschedule_strategy_prompt(user_message)
+        success, response = await self._call_ollama(prompt)
+        
+        if not success:
+            return False, None, response
+        
+        data = self._extract_json(response)
+        if data is None:
+            return False, None, "Failed to parse LLM response as JSON"
+        
+        strategy = data.get("strategy")
+        valid = ["minimize_moves", "maximize_quality", "balanced"]
+        if strategy not in valid:
+            return False, None, f"Invalid strategy: {strategy}"
+        
+        return True, strategy, ""
+    
+    async def parse_reschedule_option(self, user_message: str) -> Tuple[bool, Optional[Any], str]:
+        """
+        Parse which reschedule option the user selected (1-3 or 'back').
+        
+        Returns:
+            Tuple of (success, choice (int or 'back'), error_message)
+        """
+        prompt = build_reschedule_option_prompt(user_message)
+        success, response = await self._call_ollama(prompt)
+        
+        if not success:
+            return False, None, response
+        
+        data = self._extract_json(response)
+        if data is None:
+            return False, None, "Failed to parse LLM response as JSON"
+        
+        choice = data.get("choice")
+        if choice is None:
+            return False, None, "Response missing 'choice' field"
+        
+        if choice == "back":
+            return True, "back", ""
+        
+        try:
+            choice_num = int(choice)
+            if choice_num < 1 or choice_num > 3:
+                return False, None, f"Choice {choice_num} out of range (1-3)"
+            return True, choice_num, ""
+        except (ValueError, TypeError):
+            return False, None, f"Invalid choice: {choice}"
     
     async def check_available(self) -> bool:
         """Check if LLM is available."""

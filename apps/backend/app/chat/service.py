@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chat.states import (
     AgentState, IntentType, PreferenceType, ResolutionType, EditFieldType,
+    RescheduleStrategy,
     EventData, ConflictInfo, TimeSlot, FreeTimeRange, ExistingEvent, SessionContext
 )
 from app.chat.schemas import (
@@ -27,7 +28,7 @@ from app.chat.schemas import (
     ChatMessageRequest, ChatChoiceRequest
 )
 from app.chat.llm_service import LLMService
-from app.chat.prolog_service import get_prolog_service, PrologService
+from app.chat.prolog_service import get_prolog_service, PrologService, RescheduleOption
 from app.chat.event_repository import EventRepository
 from app.core.timezone import now as tz_now
 
@@ -107,6 +108,11 @@ class ChatAgentService:
                 response = await self._handle_confirm_edit_state(session_id, context, request.message)
             elif context.state == AgentState.CONFIRM_REMOVE:
                 response = await self._handle_confirm_remove_state(session_id, context, request.message)
+            # Phase 2: Constraint solver reschedule states
+            elif context.state == AgentState.SELECT_RESCHEDULE_OPTION:
+                response = await self._handle_select_reschedule_option_state(session_id, context, request.message)
+            elif context.state == AgentState.CONFIRM_RESCHEDULE:
+                response = await self._handle_confirm_reschedule_state(session_id, context, request.message)
             else:
                 # Unknown state - reset
                 context.reset()
@@ -725,10 +731,14 @@ class ChatAgentService:
         
         return self._build_response(
             session_id, context,
-            f"I can help you in two ways:\n1. Find a time slot that fits \"{event_title}\"\n2. Move \"{conflict_title}\" to make room",
+            f"I can help you in three ways:\n"
+            f"1. Find a time slot that fits \"{event_title}\"\n"
+            f"2. Move \"{conflict_title}\" to make room\n"
+            f"3. Smart reschedule (AI-optimized)",
             choices=[
                 ChoiceOption(id="find", label=f"Find slot for \"{event_title}\"", value="1"),
                 ChoiceOption(id="move", label=f"Move \"{conflict_title}\"", value="2"),
+                ChoiceOption(id="smart", label="Smart reschedule (AI-optimized)", value="3"),
             ],
             timeout=30
         )
@@ -739,21 +749,26 @@ class ChatAgentService:
         context: SessionContext,
         message: str
     ) -> ChatAgentResponse:
-        """Handle CHOOSE_RESOLUTION state - find slot or move event."""
-        # Parse choice (1 or 2)
+        """Handle CHOOSE_RESOLUTION state - find slot, move event, or smart reschedule."""
         choice = message.strip()
         
         if choice in ["1", "find", "first"]:
             context.resolution_type = ResolutionType.FIND_SLOT_FOR_NEW
         elif choice in ["2", "move", "second"]:
             context.resolution_type = ResolutionType.MOVE_CONFLICTING
+        elif choice in ["3", "smart", "third", "smart reschedule", "ai"]:
+            context.resolution_type = ResolutionType.SMART_RESCHEDULE
+            return await self._start_smart_reschedule(session_id, context)
         else:
+            conflict_title = context.conflict_info.title if context.conflict_info else "the conflicting event"
+            event_title = context.event_data.title if context.event_data else "your event"
             return self._build_response(
                 session_id, context,
-                "Please select option 1 or 2.",
+                "Please select option 1, 2, or 3.",
                 choices=[
-                    ChoiceOption(id="find", label="1. Find slot for new event", value="1"),
-                    ChoiceOption(id="move", label="2. Move conflicting event", value="2"),
+                    ChoiceOption(id="find", label=f"1. Find slot for \"{event_title}\"", value="1"),
+                    ChoiceOption(id="move", label=f"2. Move \"{conflict_title}\"", value="2"),
+                    ChoiceOption(id="smart", label="3. Smart reschedule (AI-optimized)", value="3"),
                 ],
                 timeout=30
             )
@@ -1399,6 +1414,269 @@ class ChatAgentService:
                 f"✓ Event \"{event.title}\" created on {slot.day}/{slot.month}/{slot.year} {slot.start_hour:02d}:{slot.start_minute:02d} - {slot.end_hour:02d}:{slot.end_minute:02d}",
                 event_created=created
             )
+    
+    # =========================================================================
+    # Phase 2: Smart Reschedule (Constraint Solver) Handlers
+    # =========================================================================
+    
+    async def _start_smart_reschedule(
+        self,
+        session_id: str,
+        context: SessionContext
+    ) -> ChatAgentResponse:
+        """Start the smart reschedule flow — generate options and show them."""
+        event = context.event_data
+        conflict = context.conflict_info
+        
+        if not event or not conflict:
+            context.reset()
+            return self._build_response(
+                session_id, context,
+                "Sorry, something went wrong. Please start over.",
+            )
+        
+        # Fetch all events on the conflict date to feed the solver
+        existing_events = await self.repo.get_events_on_date(
+            day=event.day, month=event.month, year=event.year
+        )
+        
+        # Build the new event dict for the solver
+        new_event = {
+            "title": event.title,
+            "start_hour": event.start_hour,
+            "start_minute": event.start_minute,
+            "end_hour": event.end_hour,
+            "end_minute": event.end_minute,
+        }
+        
+        # Use balanced strategy by default
+        strategy = context.reschedule_strategy or RescheduleStrategy.BALANCED
+        
+        # Call the constraint solver
+        prolog = get_prolog_service()
+        options = prolog.suggest_reschedule_options(
+            new_event=new_event,
+            existing_events=existing_events,
+            strategy=strategy.value,
+        )
+        
+        if not options:
+            # Fallback: no options found — go back to basic choices
+            context.state = AgentState.CHOOSE_RESOLUTION
+            return self._build_response(
+                session_id, context,
+                "I couldn't find optimal reschedule options. Please try another approach:",
+                choices=[
+                    ChoiceOption(id="find", label="1. Find slot for new event", value="1"),
+                    ChoiceOption(id="move", label="2. Move conflicting event", value="2"),
+                ],
+                timeout=30
+            )
+        
+        # Store options in context
+        context.reschedule_options = options
+        context.state = AgentState.SELECT_RESCHEDULE_OPTION
+        
+        # Format options for display
+        text = "🧠 Here are the AI-optimized reschedule options:\n\n"
+        for i, opt in enumerate(options, 1):
+            text += f"**Option {i}** (score: {opt.cost:.1f})\n"
+            for move in opt.moves:
+                sh = move.get("new_start_hour", move.get("start_hour", 0))
+                sm = move.get("new_start_minute", move.get("start_minute", 0))
+                eh = move.get("new_end_hour", move.get("end_hour", 0))
+                em = move.get("new_end_minute", move.get("end_minute", 0))
+                if move.get("action") == "place_new":
+                    text += f"  📌 Place \"{move['title']}\" at {sh:02d}:{sm:02d} - {eh:02d}:{em:02d}\n"
+                else:
+                    text += f"  🔄 Move \"{move['title']}\" → {sh:02d}:{sm:02d} - {eh:02d}:{em:02d}\n"
+            text += f"  {opt.description}\n\n"
+        
+        choices = []
+        for i, opt in enumerate(options, 1):
+            choices.append(ChoiceOption(
+                id=f"option_{i}",
+                label=f"Option {i}: {opt.description}",
+                value=str(i)
+            ))
+        choices.append(ChoiceOption(id="back", label="← Go back", value="back"))
+        
+        return self._build_response(
+            session_id, context,
+            text,
+            choices=choices,
+            timeout=60
+        )
+    
+    async def _handle_select_reschedule_option_state(
+        self,
+        session_id: str,
+        context: SessionContext,
+        message: str
+    ) -> ChatAgentResponse:
+        """Handle SELECT_RESCHEDULE_OPTION — user picks from A* options."""
+        message_lower = message.strip().lower()
+        
+        # Direct button handling
+        if message_lower == "back":
+            choice = "back"
+        elif message_lower in ["1", "2", "3"]:
+            choice = int(message_lower)
+        else:
+            success, choice, error = await self.llm.parse_reschedule_option(message)
+            if not success:
+                choices = []
+                for i, opt in enumerate(context.reschedule_options or [], 1):
+                    choices.append(ChoiceOption(
+                        id=f"option_{i}",
+                        label=f"Option {i}: {opt.description}",
+                        value=str(i)
+                    ))
+                choices.append(ChoiceOption(id="back", label="← Go back", value="back"))
+                return self._build_response(
+                    session_id, context,
+                    "Please select an option number (1-3) or go back.",
+                    choices=choices,
+                    timeout=60
+                )
+        
+        if choice == "back":
+            context.state = AgentState.CHOOSE_RESOLUTION
+            conflict_title = context.conflict_info.title if context.conflict_info else "the conflicting event"
+            event_title = context.event_data.title if context.event_data else "your event"
+            return self._build_response(
+                session_id, context,
+                f"How would you like to resolve the conflict?",
+                choices=[
+                    ChoiceOption(id="find", label=f"1. Find slot for \"{event_title}\"", value="1"),
+                    ChoiceOption(id="move", label=f"2. Move \"{conflict_title}\"", value="2"),
+                    ChoiceOption(id="smart", label="3. Smart reschedule (AI-optimized)", value="3"),
+                ],
+                timeout=30
+            )
+        
+        options = context.reschedule_options or []
+        if not isinstance(choice, int) or choice < 1 or choice > len(options):
+            return self._build_response(
+                session_id, context,
+                f"Please pick a valid option (1-{len(options)}).",
+                timeout=30
+            )
+        
+        selected = options[choice - 1]
+        context.selected_reschedule = selected
+        context.state = AgentState.CONFIRM_RESCHEDULE
+        
+        # Show confirmation
+        text = f"Please confirm these changes:\n"
+        for move in selected.moves:
+            sh = move.get("new_start_hour", move.get("start_hour", 0))
+            sm = move.get("new_start_minute", move.get("start_minute", 0))
+            eh = move.get("new_end_hour", move.get("end_hour", 0))
+            em = move.get("new_end_minute", move.get("end_minute", 0))
+            if move.get("action") == "place_new":
+                text += f"  📌 Add \"{move['title']}\" at {sh:02d}:{sm:02d} - {eh:02d}:{em:02d}\n"
+            else:
+                text += f"  🔄 Move \"{move['title']}\" → {sh:02d}:{sm:02d} - {eh:02d}:{em:02d}\n"
+        
+        return self._build_response(
+            session_id, context,
+            text,
+            choices=[
+                ChoiceOption(id="confirm", label="✓ Confirm", value="yes"),
+                ChoiceOption(id="back", label="← Go back", value="no"),
+            ],
+            timeout=30
+        )
+    
+    async def _handle_confirm_reschedule_state(
+        self,
+        session_id: str,
+        context: SessionContext,
+        message: str
+    ) -> ChatAgentResponse:
+        """Handle CONFIRM_RESCHEDULE — execute the selected option's moves."""
+        message_lower = message.strip().lower()
+        
+        if message_lower in ["yes", "confirm", "✓ confirm", "ok", "okay", "sure", "y"]:
+            confirmed = True
+        elif message_lower in ["no", "back", "← go back", "go back", "cancel", "n"]:
+            confirmed = False
+        else:
+            success, confirmed, error = await self.llm.parse_confirmation(message)
+            if not success:
+                return self._build_response(
+                    session_id, context,
+                    "Please confirm or go back.",
+                    choices=[
+                        ChoiceOption(id="confirm", label="✓ Confirm", value="yes"),
+                        ChoiceOption(id="back", label="← Go back", value="no"),
+                    ],
+                    timeout=30
+                )
+        
+        if not confirmed:
+            # Go back to option selection
+            return await self._start_smart_reschedule(session_id, context)
+        
+        # Execute all moves
+        selected = context.selected_reschedule
+        if not selected:
+            context.reset()
+            return self._build_response(
+                session_id, context,
+                "Something went wrong. Please start over.",
+            )
+        
+        event = context.event_data
+        created_event = None
+        summary_lines = []
+        
+        for move in selected.moves:
+            sh = move.get("new_start_hour", move.get("start_hour", 0))
+            sm = move.get("new_start_minute", move.get("start_minute", 0))
+            eh = move.get("new_end_hour", move.get("end_hour", 0))
+            em = move.get("new_end_minute", move.get("end_minute", 0))
+            if move.get("action") == "place_new":
+                # Create the new event at the solver's suggested time
+                created_event = await self.repo.create_event(
+                    title=move["title"],
+                    day=event.day,
+                    month=event.month,
+                    year=event.year,
+                    start_hour=sh,
+                    start_minute=sm,
+                    end_hour=eh,
+                    end_minute=em,
+                    location=event.location,
+                    notes=event.notes,
+                )
+                summary_lines.append(
+                    f"📌 Created \"{move['title']}\" at {sh:02d}:{sm:02d}"
+                )
+            elif move.get("event_id"):
+                # Move an existing event
+                await self.repo.update_event(
+                    event_id=move["event_id"],
+                    day=event.day,
+                    month=event.month,
+                    year=event.year,
+                    start_hour=sh,
+                    start_minute=sm,
+                    end_hour=eh,
+                    end_minute=em,
+                )
+                summary_lines.append(
+                    f"🔄 Moved \"{move['title']}\" → {sh:02d}:{sm:02d}"
+                )
+        
+        context.reset()
+        summary = "\n".join(summary_lines)
+        return self._build_response(
+            session_id, context,
+            f"✓ Done! Smart reschedule applied:\n{summary}",
+            event_created=created_event
+        )
     
     # =========================================================================
     # Edit/Remove Flow State Handlers

@@ -64,6 +64,15 @@ class AgentState(str, Enum):
     
     # Remove flow: Confirm removal
     CONFIRM_REMOVE = "confirm_remove"
+    
+    # Phase 3: User selecting reschedule strategy
+    SELECT_STRATEGY = "select_strategy"
+    
+    # Phase 2: User viewing A*-generated reschedule options
+    SELECT_RESCHEDULE_OPTION = "select_reschedule_option"
+    
+    # Phase 2: Confirm the selected reschedule plan
+    CONFIRM_RESCHEDULE = "confirm_reschedule"
 
 
 class IntentType(str, Enum):
@@ -90,6 +99,15 @@ class ResolutionType(str, Enum):
     
     FIND_SLOT_FOR_NEW = "find_slot_for_new"
     MOVE_CONFLICTING = "move_conflicting"
+    SMART_RESCHEDULE = "smart_reschedule"
+
+
+class RescheduleStrategy(str, Enum):
+    """Strategy for A*-based rescheduling."""
+    
+    MINIMIZE_MOVES = "minimize_moves"
+    MAXIMIZE_QUALITY = "maximize_quality"
+    BALANCED = "balanced"
 
 
 class EditFieldType(str, Enum):
@@ -337,6 +355,11 @@ class SessionContext:
     edit_field: Optional[EditFieldType] = None  # Field being edited
     new_event_data: Optional[Dict[str, Any]] = None  # New values for edited event (day, month, year, start_hour, etc.)
     
+    # Phase 2: Constraint solver rescheduling fields
+    reschedule_strategy: Optional[RescheduleStrategy] = None
+    reschedule_options: list[Dict[str, Any]] = field(default_factory=list)  # Serialized RescheduleOption list
+    selected_reschedule: Optional[Dict[str, Any]] = None  # The picked option
+    
     def reset(self):
         """Reset to initial state."""
         self.state = AgentState.INIT
@@ -357,6 +380,9 @@ class SessionContext:
         self.selected_event = None
         self.edit_field = None
         self.new_event_data = None
+        self.reschedule_strategy = None
+        self.reschedule_options = []
+        self.selected_reschedule = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary for storage."""
@@ -379,6 +405,9 @@ class SessionContext:
             "selected_event": self.selected_event.to_dict() if self.selected_event else None,
             "edit_field": self.edit_field.value if self.edit_field else None,
             "new_event_data": self.new_event_data,  # Already a dict
+            "reschedule_strategy": self.reschedule_strategy.value if self.reschedule_strategy else None,
+            "reschedule_options": self.reschedule_options,  # Already list of dicts
+            "selected_reschedule": self.selected_reschedule,  # Already a dict
         }
     
     @classmethod
@@ -403,6 +432,9 @@ class SessionContext:
         ctx.selected_event = ExistingEvent(**data["selected_event"]) if data.get("selected_event") else None
         ctx.edit_field = EditFieldType(data["edit_field"]) if data.get("edit_field") else None
         ctx.new_event_data = data.get("new_event_data")  # Already a dict
+        ctx.reschedule_strategy = RescheduleStrategy(data["reschedule_strategy"]) if data.get("reschedule_strategy") else None
+        ctx.reschedule_options = data.get("reschedule_options", [])
+        ctx.selected_reschedule = data.get("selected_reschedule")
         return ctx
 
 
@@ -429,6 +461,8 @@ class StateTransition:
             ],
             AgentState.CHOOSE_RESOLUTION: [
                 AgentState.SELECT_PREFERENCE,
+                AgentState.SELECT_STRATEGY,  # Phase 3: Strategy selection before smart reschedule
+                AgentState.SELECT_RESCHEDULE_OPTION,  # Phase 2: Smart reschedule
                 AgentState.INIT,  # Timeout or cancel
             ],
             AgentState.SELECT_PREFERENCE: [
@@ -453,6 +487,24 @@ class StateTransition:
                 AgentState.SELECT_PREFERENCE,
                 AgentState.SELECT_SLOT,
                 AgentState.CONFIRM_ACTION,
+                AgentState.SELECT_STRATEGY,
+                AgentState.SELECT_RESCHEDULE_OPTION,
+            ],
+            # Phase 3: Strategy selection for smart reschedule
+            AgentState.SELECT_STRATEGY: [
+                AgentState.SELECT_RESCHEDULE_OPTION,  # Strategy chosen, run solver
+                AgentState.CHOOSE_RESOLUTION,  # Go back
+                AgentState.INIT,  # Cancel
+            ],
+            # Phase 2: Constraint solver rescheduling
+            AgentState.SELECT_RESCHEDULE_OPTION: [
+                AgentState.CONFIRM_RESCHEDULE,  # User picked an option
+                AgentState.CHOOSE_RESOLUTION,  # Go back
+                AgentState.INIT,  # Cancel
+            ],
+            AgentState.CONFIRM_RESCHEDULE: [
+                AgentState.INIT,  # Confirmed or cancelled
+                AgentState.SELECT_RESCHEDULE_OPTION,  # Go back
             ],
         }
         
