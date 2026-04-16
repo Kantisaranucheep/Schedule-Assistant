@@ -108,6 +108,9 @@ class ChatAgentService:
                 response = await self._handle_confirm_edit_state(session_id, context, request.message)
             elif context.state == AgentState.CONFIRM_REMOVE:
                 response = await self._handle_confirm_remove_state(session_id, context, request.message)
+            # Phase 3: Strategy selection for smart reschedule
+            elif context.state == AgentState.SELECT_STRATEGY:
+                response = await self._handle_select_strategy_state(session_id, context, request.message)
             # Phase 2: Constraint solver reschedule states
             elif context.state == AgentState.SELECT_RESCHEDULE_OPTION:
                 response = await self._handle_select_reschedule_option_state(session_id, context, request.message)
@@ -758,7 +761,17 @@ class ChatAgentService:
             context.resolution_type = ResolutionType.MOVE_CONFLICTING
         elif choice in ["3", "smart", "third", "smart reschedule", "ai"]:
             context.resolution_type = ResolutionType.SMART_RESCHEDULE
-            return await self._start_smart_reschedule(session_id, context)
+            context.state = AgentState.SELECT_STRATEGY
+            return self._build_response(
+                session_id, context,
+                "Which rescheduling strategy would you prefer?",
+                choices=[
+                    ChoiceOption(id="minimize", label="1. Minimize moves", value="1"),
+                    ChoiceOption(id="quality", label="2. Maximize time quality", value="2"),
+                    ChoiceOption(id="balanced", label="3. Balanced (Recommended)", value="3"),
+                ],
+                timeout=30
+            )
         else:
             conflict_title = context.conflict_info.title if context.conflict_info else "the conflicting event"
             event_title = context.event_data.title if context.event_data else "your event"
@@ -1419,6 +1432,35 @@ class ChatAgentService:
     # Phase 2: Smart Reschedule (Constraint Solver) Handlers
     # =========================================================================
     
+    async def _handle_select_strategy_state(
+        self,
+        session_id: str,
+        context: SessionContext,
+        message: str
+    ) -> ChatAgentResponse:
+        """Handle SELECT_STRATEGY state — user picks a rescheduling strategy."""
+        choice = message.strip().lower()
+        
+        if choice in ["1", "minimize", "minimize moves"]:
+            context.reschedule_strategy = RescheduleStrategy.MINIMIZE_MOVES
+        elif choice in ["2", "quality", "maximize", "maximize time quality"]:
+            context.reschedule_strategy = RescheduleStrategy.MAXIMIZE_QUALITY
+        elif choice in ["3", "balanced", "recommended"]:
+            context.reschedule_strategy = RescheduleStrategy.BALANCED
+        else:
+            return self._build_response(
+                session_id, context,
+                "Please select a strategy (1-3).",
+                choices=[
+                    ChoiceOption(id="minimize", label="1. Minimize moves", value="1"),
+                    ChoiceOption(id="quality", label="2. Maximize time quality", value="2"),
+                    ChoiceOption(id="balanced", label="3. Balanced (Recommended)", value="3"),
+                ],
+                timeout=30
+            )
+        
+        return await self._start_smart_reschedule(session_id, context)
+    
     async def _start_smart_reschedule(
         self,
         session_id: str,
@@ -1632,13 +1674,13 @@ class ChatAgentService:
         created_event = None
         summary_lines = []
         
-        for move in selected.moves:
-            sh = move.get("new_start_hour", move.get("start_hour", 0))
-            sm = move.get("new_start_minute", move.get("start_minute", 0))
-            eh = move.get("new_end_hour", move.get("end_hour", 0))
-            em = move.get("new_end_minute", move.get("end_minute", 0))
-            if move.get("action") == "place_new":
-                # Create the new event at the solver's suggested time
+        if selected.action == "move_new":
+            # The new event is moved to a different time; conflicting events stay
+            for move in selected.moves:
+                sh = move.get("new_start_hour", move.get("start_hour", 0))
+                sm = move.get("new_start_minute", move.get("start_minute", 0))
+                eh = move.get("new_end_hour", move.get("end_hour", 0))
+                em = move.get("new_end_minute", move.get("end_minute", 0))
                 created_event = await self.repo.create_event(
                     title=move["title"],
                     day=event.day,
@@ -1652,10 +1694,15 @@ class ChatAgentService:
                     notes=event.notes,
                 )
                 summary_lines.append(
-                    f"📌 Created \"{move['title']}\" at {sh:02d}:{sm:02d}"
+                    f"📌 Created \"{move['title']}\" at {sh:02d}:{sm:02d}-{eh:02d}:{em:02d}"
                 )
-            elif move.get("event_id"):
-                # Move an existing event
+        elif selected.action == "move_existing":
+            # Move the conflicting event(s) out of the way, then create the new event at its original time
+            for move in selected.moves:
+                sh = move.get("new_start_hour", move.get("start_hour", 0))
+                sm = move.get("new_start_minute", move.get("start_minute", 0))
+                eh = move.get("new_end_hour", move.get("end_hour", 0))
+                em = move.get("new_end_minute", move.get("end_minute", 0))
                 await self.repo.update_event(
                     event_id=move["event_id"],
                     day=event.day,
@@ -1667,8 +1714,24 @@ class ChatAgentService:
                     end_minute=em,
                 )
                 summary_lines.append(
-                    f"🔄 Moved \"{move['title']}\" → {sh:02d}:{sm:02d}"
+                    f"🔄 Moved \"{move['title']}\" → {sh:02d}:{sm:02d}-{eh:02d}:{em:02d}"
                 )
+            # Now create the new event at its originally requested time
+            created_event = await self.repo.create_event(
+                title=event.title,
+                day=event.day,
+                month=event.month,
+                year=event.year,
+                start_hour=event.start_hour,
+                start_minute=event.start_minute,
+                end_hour=event.end_hour,
+                end_minute=event.end_minute,
+                location=event.location,
+                notes=event.notes,
+            )
+            summary_lines.append(
+                f"📌 Created \"{event.title}\" at {event.start_hour:02d}:{event.start_minute:02d}-{event.end_hour:02d}:{event.end_minute:02d}"
+            )
         
         context.reset()
         summary = "\n".join(summary_lines)
