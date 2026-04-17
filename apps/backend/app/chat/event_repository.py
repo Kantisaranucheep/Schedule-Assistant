@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Event, Calendar, UserProfile
+from app.models import Event, Calendar, UserProfile, EventCollaborator
 
 
 # Default user and calendar IDs (hardcoded for simplicity)
@@ -78,7 +78,13 @@ class EventRepository:
         result = await self.db.execute(
             select(Event).where(
                 and_(
-                    Event.calendar_id == calendar_id,
+                    or_(
+                        Event.calendar_id == calendar_id,
+                        Event.id.in_(
+                            select(EventCollaborator.event_id)
+                            .where(EventCollaborator.user_id == self.user_id)
+                        ),
+                    ),
                     Event.status == "confirmed",
                     Event.start_time < end_of_day,
                     Event.end_time > start_of_day,
@@ -113,7 +119,13 @@ class EventRepository:
         result = await self.db.execute(
             select(Event).where(
                 and_(
-                    Event.calendar_id == calendar_id,
+                    or_(
+                        Event.calendar_id == calendar_id,
+                        Event.id.in_(
+                            select(EventCollaborator.event_id)
+                            .where(EventCollaborator.user_id == self.user_id)
+                        ),
+                    ),
                     Event.status == "confirmed",
                     Event.start_time < end_date,
                     Event.end_time > start_date,
@@ -312,7 +324,13 @@ class EventRepository:
         result = await self.db.execute(
             select(Event).where(
                 and_(
-                    Event.calendar_id == calendar_id,
+                    or_(
+                        Event.calendar_id == calendar_id,
+                        Event.id.in_(
+                            select(EventCollaborator.event_id)
+                            .where(EventCollaborator.user_id == self.user_id)
+                        ),
+                    ),
                     Event.status == "confirmed",
                     Event.title.ilike(f"%{title}%"),
                     Event.start_time >= start_of_day,
