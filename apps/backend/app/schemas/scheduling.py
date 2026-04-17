@@ -69,3 +69,35 @@ class EventPriorityCheckResponse(BaseModel):
     is_critical: bool
     is_movable: bool
     priority_config: Dict[str, int]
+
+
+# ── Conflict Resolution Suggestion Schemas ────────────────────────────────────
+
+class ConflictSuggestionRequest(BaseModel):
+    """Request to get AI-suggested reschedule times for conflicting events."""
+    event_ids: List[UUID]
+    collab_event_start: datetime
+    collab_event_end: datetime
+    collab_event_title: str = ""
+
+
+class TimeSuggestion(BaseModel):
+    """A single time suggestion for rescheduling."""
+    new_start: str  # ISO datetime string
+    new_end: str
+    cost: float
+    explanation: str
+
+
+class EventSuggestions(BaseModel):
+    """Suggestions for one conflicting event."""
+    event_id: str
+    event_title: str
+    original_start: str
+    original_end: str
+    suggestions: List[TimeSuggestion]
+
+
+class ConflictSuggestionResponse(BaseModel):
+    """Response with AI-suggested reschedule times."""
+    event_suggestions: List[EventSuggestions]

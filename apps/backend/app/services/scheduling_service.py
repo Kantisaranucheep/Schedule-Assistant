@@ -281,6 +281,29 @@ def find_best_slot_for_event(event: ScheduleEvent, other_events: List[ScheduleEv
     return (best_start, best_cost) if best_start is not None else None
 
 
+def find_top_n_slots_for_event(event: ScheduleEvent, other_events: List[ScheduleEvent],
+                                n: int = 3,
+                                min_time: int = 360, max_time: int = 1380) -> List[Tuple[int, float]]:
+    """
+    Find the N closest available slots to the event's original time.
+    Ranked purely by absolute time distance so suggestions stay near the original hour.
+    Returns list of (start_time_minutes, distance_minutes) sorted by distance ascending.
+    """
+    others = [e for e in other_events if e.id != event.id]
+    slots = find_free_slots(others, event.duration, min_time, max_time, step=30)
+
+    if not slots:
+        return []
+
+    scored = []
+    for slot_start in slots:
+        distance = abs(slot_start - event.start_minutes)
+        scored.append((slot_start, float(distance)))
+
+    scored.sort(key=lambda x: x[1])
+    return scored[:n]
+
+
 # ============================================================================
 # A* Schedule Optimizer
 # ============================================================================

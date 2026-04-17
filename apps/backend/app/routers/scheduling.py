@@ -1,14 +1,15 @@
 """Scheduling API — Priority-aware rescheduling with A* optimization.
 
 Endpoints:
-  POST /scheduling/reschedule   — Analyze conflicts & suggest rescheduling
-  POST /scheduling/priority     — Check inferred priority for an event title
-  GET  /scheduling/constraints  — Get hard/soft constraint definitions
+  POST /scheduling/reschedule                  — Analyze conflicts & suggest rescheduling
+  POST /scheduling/suggest-conflict-resolution — AI-suggest best times for conflicting events
+  POST /scheduling/priority                    — Check inferred priority for an event title
+  GET  /scheduling/constraints                 — Get hard/soft constraint definitions
 """
 
 import logging
-from datetime import datetime, timezone as dt_timezone
-from typing import Optional
+from datetime import datetime, timedelta, timezone as dt_timezone
+from typing import Optional, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -24,8 +25,14 @@ from app.schemas.scheduling import (
     MoveActionResponse,
     EventPriorityCheckRequest,
     EventPriorityCheckResponse,
+    ConflictSuggestionRequest,
+    ConflictSuggestionResponse,
+    EventSuggestions,
+    TimeSuggestion,
 )
-from app.services.scheduling_service import SchedulingService, MoveAction
+from app.services.scheduling_service import (
+    SchedulingService, MoveAction,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -280,3 +287,144 @@ async def get_constraints():
             "h(n)": "Priority loss: priority² × strategy_weight for each remaining conflict",
         },
     }
+
+
+def _find_closest_free_slots(
+    occupied: List[tuple],
+    target_start: datetime,
+    duration: timedelta,
+    day_start: datetime,
+    day_end: datetime,
+    n: int = 3,
+    step_minutes: int = 30,
+) -> List[tuple]:
+    """
+    Find the N free time slots closest to target_start.
+
+    Works directly with UTC datetimes — no minute-from-midnight conversion.
+    Scans the window [day_start, day_end) in step_minutes increments,
+    skips occupied periods, and ranks by absolute distance to target_start.
+
+    Args:
+        occupied: list of (start_dt, end_dt) tuples for busy periods
+        target_start: the original event start time (to minimize distance from)
+        duration: how long the event needs
+        day_start: earliest possible start for a slot
+        day_end: latest possible end for a slot
+        n: how many results to return
+        step_minutes: scan granularity
+
+    Returns: list of (new_start_dt, new_end_dt, distance_minutes) sorted by distance
+    """
+    step = timedelta(minutes=step_minutes)
+    slots = []
+    current = day_start
+    while current + duration <= day_end:
+        slot_end = current + duration
+        conflict = any(current < occ_end and occ_start < slot_end
+                       for occ_start, occ_end in occupied)
+        if not conflict:
+            dist = abs((current - target_start).total_seconds()) / 60.0
+            slots.append((current, slot_end, dist))
+        current += step
+
+    slots.sort(key=lambda x: x[2])
+    return slots[:n]
+
+
+@router.post("/suggest-conflict-resolution", response_model=ConflictSuggestionResponse)
+async def suggest_conflict_resolution(
+    data: ConflictSuggestionRequest,
+    user_id: str = Query(..., description="User ID for priority config"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Suggest the 3 closest available time slots for each conflicting event.
+
+    Works directly with UTC datetimes to avoid timezone conversion issues.
+    Scans the full 24h window of the event's day in 30-min steps, treating
+    all other events + the collab event as occupied blocks, then ranks
+    free slots by absolute time distance from the original event start.
+    If the same day has fewer than 3 slots, checks ±1 and ±2 adjacent days.
+    """
+    event_suggestions_list: List[EventSuggestions] = []
+
+    for event_id in data.event_ids:
+        event_q = await db.execute(select(Event).where(Event.id == event_id))
+        ev = event_q.scalar_one_or_none()
+        if not ev:
+            continue
+
+        duration = ev.end_time - ev.start_time
+        base_date = ev.start_time.date()
+        collab_start = data.collab_event_start
+        collab_end = data.collab_event_end
+        collab_date = collab_start.date()
+
+        all_candidates: list[dict] = []
+
+        for day_offset in [0, 1, -1, 2, -2]:
+            check_date = base_date + timedelta(days=day_offset)
+            day_start_dt = datetime(check_date.year, check_date.month, check_date.day,
+                                    tzinfo=dt_timezone.utc)
+            day_end_dt = day_start_dt + timedelta(hours=24)
+
+            # Fetch occupied events on this day
+            day_events = await _get_day_events(
+                db, ev.calendar_id, day_start_dt, exclude_event_id=ev.id,
+            )
+
+            occupied: List[tuple] = []
+            for de in day_events:
+                s = de["start_time"]
+                e = de["end_time"]
+                # Ensure timezone-aware
+                if s.tzinfo is None:
+                    s = s.replace(tzinfo=dt_timezone.utc)
+                if e.tzinfo is None:
+                    e = e.replace(tzinfo=dt_timezone.utc)
+                occupied.append((s, e))
+
+            # Add collab event as occupied on its day
+            if check_date == collab_date:
+                cs = collab_start if collab_start.tzinfo else collab_start.replace(tzinfo=dt_timezone.utc)
+                ce = collab_end if collab_end.tzinfo else collab_end.replace(tzinfo=dt_timezone.utc)
+                occupied.append((cs, ce))
+
+            # The target start: same wall-clock time projected onto check_date
+            target_start = datetime(
+                check_date.year, check_date.month, check_date.day,
+                ev.start_time.hour, ev.start_time.minute,
+                tzinfo=dt_timezone.utc,
+            )
+
+            slots = _find_closest_free_slots(
+                occupied, target_start, duration, day_start_dt, day_end_dt, n=3,
+            )
+
+            for new_start, new_end, dist in slots:
+                day_penalty = abs(day_offset) * 1440.0
+                total_dist = dist + day_penalty
+
+                all_candidates.append({
+                    "new_start": new_start.isoformat(),
+                    "new_end": new_end.isoformat(),
+                    "cost": round(total_dist, 2),
+                    "explanation": "Same day" if day_offset == 0 else f"on {check_date.strftime('%b %d')}",
+                })
+
+            if day_offset == 0 and len(all_candidates) >= 3:
+                break
+
+        all_candidates.sort(key=lambda c: c["cost"])
+        top = all_candidates[:3]
+
+        event_suggestions_list.append(EventSuggestions(
+            event_id=str(ev.id),
+            event_title=ev.title,
+            original_start=ev.start_time.isoformat(),
+            original_end=ev.end_time.isoformat(),
+            suggestions=[TimeSuggestion(**s) for s in top],
+        ))
+
+    return ConflictSuggestionResponse(event_suggestions=event_suggestions_list)

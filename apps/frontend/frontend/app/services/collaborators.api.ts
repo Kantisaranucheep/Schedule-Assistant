@@ -118,3 +118,46 @@ export async function dismissConflictReport(invitationId: string): Promise<void>
         throw new Error(`Failed to dismiss conflict report: ${res.statusText}`);
     }
 }
+
+// ── AI-powered reschedule suggestion types ──
+
+export interface TimeSuggestion {
+    new_start: string;
+    new_end: string;
+    cost: number;
+    explanation: string;
+}
+
+export interface EventSuggestions {
+    event_id: string;
+    event_title: string;
+    original_start: string;
+    original_end: string;
+    suggestions: TimeSuggestion[];
+}
+
+export async function fetchRescheduleSuggestions(
+    eventIds: string[],
+    collabEventStart: string,
+    collabEventEnd: string,
+    collabEventTitle: string,
+    userId: string,
+): Promise<{ event_suggestions: EventSuggestions[] }> {
+    const res = await fetch(
+        `${API_BASE}/scheduling/suggest-conflict-resolution?user_id=${encodeURIComponent(userId)}`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                event_ids: eventIds,
+                collab_event_start: collabEventStart,
+                collab_event_end: collabEventEnd,
+                collab_event_title: collabEventTitle,
+            }),
+        },
+    );
+    if (!res.ok) {
+        throw new Error(`Failed to fetch reschedule suggestions: ${res.statusText}`);
+    }
+    return res.json();
+}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { NotificationSettings, NotificationTimePreference } from "../../types";
 import { NOTIFICATION_TIME_OPTIONS, minutesToLabel } from "../../services/settings.api";
-import { InvitationResponse, AcceptInvitationResult, ConflictReport } from "../../services/collaborators.api";
+import { InvitationResponse, AcceptInvitationResult, ConflictReport, TimeSuggestion, fetchRescheduleSuggestions } from "../../services/collaborators.api";
 import { EventUpdateRequest } from "../../services/events.api";
 
 interface NotificationModalProps {
@@ -46,31 +46,88 @@ export default function NotificationModal({
 }: NotificationModalProps) {
     const [showTimePicker, setShowTimePicker] = useState(false);
     const [activeTab, setActiveTab] = useState<'invites' | 'settings'>('invites');
-    // Conflict resolution: edit mode state
-    const [editMode, setEditMode] = useState(false);
-    const [editingEventId, setEditingEventId] = useState<string | null>(null);
-    const [editStart, setEditStart] = useState("");
-    const [editEnd, setEditEnd] = useState("");
-    const [editSaving, setEditSaving] = useState(false);
-    const [editError, setEditError] = useState<string | null>(null);
-    const [resolvedEventIds, setResolvedEventIds] = useState<Set<string>>(new Set());
+    // Conflict resolution: AI suggestion mode
+    const [suggestMode, setSuggestMode] = useState(false);
+    const [suggestions, setSuggestions] = useState<Record<string, TimeSuggestion[]>>({});
+    const [selectedSuggestions, setSelectedSuggestions] = useState<Record<string, TimeSuggestion>>({});
+    const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+    const [suggestError, setSuggestError] = useState<string | null>(null);
+    const [applyingReschedule, setApplyingReschedule] = useState(false);
 
-    // Reset edit state when conflict result changes
+    // Reset suggestion state when conflict result changes
     useEffect(() => {
         if (!conflictResult) {
-            setEditMode(false);
-            setEditingEventId(null);
-            setEditStart("");
-            setEditEnd("");
-            setEditError(null);
-            setResolvedEventIds(new Set());
+            setSuggestMode(false);
+            setSuggestions({});
+            setSelectedSuggestions({});
+            setLoadingSuggestions(false);
+            setSuggestError(null);
+            setApplyingReschedule(false);
         }
     }, [conflictResult]);
 
-    // Helper to format Date as datetime-local input value
-    const toLocalDatetimeString = (dt: Date) => {
-        const pad = (n: number) => n.toString().padStart(2, "0");
-        return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+    // Helper to get userId from localStorage
+    const getUserId = (): string | null => {
+        try {
+            const sessionItem = localStorage.getItem("scheduler_auth_session");
+            if (sessionItem) {
+                return JSON.parse(sessionItem).user_id;
+            }
+        } catch (e) { /* ignore */ }
+        return null;
+    };
+
+    // Load AI suggestions for conflicting events
+    const handleLoadSuggestions = async () => {
+        if (!conflictResult) return;
+        const userId = getUserId();
+        if (!userId) return;
+
+        setSuggestMode(true);
+        setLoadingSuggestions(true);
+        setSuggestError(null);
+        setSelectedSuggestions({});
+
+        try {
+            const eventIds = conflictResult.conflicts.map(c => c.event_id);
+            const result = await fetchRescheduleSuggestions(
+                eventIds,
+                conflictResult.collab_event_start || "",
+                conflictResult.collab_event_end || "",
+                conflictResult.collab_event_title || "",
+                userId,
+            );
+            const sugMap: Record<string, TimeSuggestion[]> = {};
+            result.event_suggestions.forEach(es => {
+                sugMap[es.event_id] = es.suggestions;
+            });
+            setSuggestions(sugMap);
+        } catch (err) {
+            setSuggestError(err instanceof Error ? err.message : "Failed to load suggestions");
+        } finally {
+            setLoadingSuggestions(false);
+        }
+    };
+
+    // Apply all selected suggestions then accept collab event
+    const handleApplyAndAccept = async () => {
+        if (!conflictResult?.invitation_id) return;
+        setApplyingReschedule(true);
+        setSuggestError(null);
+
+        try {
+            for (const [eventId, suggestion] of Object.entries(selectedSuggestions)) {
+                await onUpdateEventTime(eventId, {
+                    start_time: suggestion.new_start,
+                    end_time: suggestion.new_end,
+                });
+            }
+            await onForceAccept(conflictResult.invitation_id);
+        } catch (err) {
+            setSuggestError(err instanceof Error ? err.message : "Failed to apply reschedule");
+        } finally {
+            setApplyingReschedule(false);
+        }
     };
 
     if (!isOpen) return null;
@@ -276,7 +333,7 @@ export default function NotificationModal({
                                         </div>
                                     </div>
 
-                                    {!editMode ? (
+                                    {!suggestMode ? (
                                         <>
                                             <div className="small mb-3">
                                                 <span className="text-white-50">Your conflicting events:</span>
@@ -294,10 +351,14 @@ export default function NotificationModal({
                                             </div>
                                             <div className="d-flex flex-column gap-2">
                                                 <button 
-                                                    className="btn btn-warning rounded-pill px-4 fw-bold shadow-sm text-dark"
-                                                    onClick={() => setEditMode(true)}
+                                                    className="btn btn-warning rounded-pill px-4 fw-bold shadow-sm text-dark d-flex align-items-center justify-content-center gap-2"
+                                                    onClick={handleLoadSuggestions}
                                                 >
-                                                    Reschedule My Event &amp; Accept
+                                                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                                        <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
+                                                        <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.901-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319z"/>
+                                                    </svg>
+                                                    AI Suggest Reschedule
                                                 </button>
                                                 <button 
                                                     className="btn btn-outline-light rounded-pill px-4 fw-bold border shadow-sm"
@@ -315,159 +376,136 @@ export default function NotificationModal({
                                         </>
                                     ) : (
                                         <>
-                                            {/* Edit mode: reschedule conflicting events */}
-                                            <div className="small text-white-50 mb-2">
-                                                Click a conflicting event to change its time, then accept the collaboration:
-                                            </div>
-                                            <div className="d-flex flex-column gap-2 mb-3">
-                                                {conflictResult.conflicts.map((c) => {
-                                                    const isEditing = editingEventId === c.event_id;
-                                                    const isResolved = resolvedEventIds.has(c.event_id);
+                                            {/* AI Suggestion Mode */}
+                                            {loadingSuggestions ? (
+                                                <div className="text-center py-4">
+                                                    <div className="spinner-border spinner-border-sm text-warning mb-2" role="status" />
+                                                    <div className="small text-white-50">AI is analyzing your schedule...</div>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <div className="small text-white-50 mb-2">
+                                                        Select a new time for each conflicting event:
+                                                    </div>
 
-                                                    return (
-                                                        <div key={c.event_id} className="rounded-3 border overflow-hidden" style={{ backgroundColor: isResolved ? "rgba(25, 135, 84, 0.1)" : "rgba(255, 255, 255, 0.05)", borderColor: isResolved ? "rgba(25, 135, 84, 0.4)" : "rgba(255, 255, 255, 0.1)" }}>
-                                                            <div
-                                                                className="p-2 d-flex align-items-center justify-content-between"
-                                                                style={{ cursor: isResolved ? "default" : "pointer" }}
-                                                                onClick={() => {
-                                                                    if (isResolved) return;
-                                                                    if (isEditing) {
-                                                                        setEditingEventId(null);
-                                                                    } else {
-                                                                        setEditingEventId(c.event_id);
-                                                                        // Pre-fill with current times
-                                                                        const startDt = new Date(c.start_time);
-                                                                        const endDt = new Date(c.end_time);
-                                                                        setEditStart(toLocalDatetimeString(startDt));
-                                                                        setEditEnd(toLocalDatetimeString(endDt));
-                                                                        setEditError(null);
-                                                                    }
-                                                                }}
-                                                            >
-                                                                <div>
+                                                    {suggestError && (
+                                                        <div className="small mb-2 p-2 rounded-3 d-flex align-items-center gap-2" style={{ backgroundColor: "rgba(220, 53, 69, 0.15)", border: "1px solid rgba(220, 53, 69, 0.4)", color: "#ff6b6b" }}>
+                                                            <svg width="14" height="14" fill="currentColor" viewBox="0 0 16 16" className="flex-shrink-0">
+                                                                <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5m.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2"/>
+                                                            </svg>
+                                                            <span>{suggestError}</span>
+                                                        </div>
+                                                    )}
+
+                                                    {conflictResult.conflicts.map((c) => {
+                                                        const eventSuggestions = suggestions[c.event_id] || [];
+                                                        const selected = selectedSuggestions[c.event_id];
+
+                                                        return (
+                                                            <div key={c.event_id} className="mb-3">
+                                                                <div className="d-flex align-items-center gap-2 mb-2">
                                                                     <span className="fw-semibold text-white small">{c.title}</span>
-                                                                    <div className="text-secondary" style={{ fontSize: 11 }}>
-                                                                        {new Date(c.start_time).toLocaleString()} – {new Date(c.end_time).toLocaleTimeString()}
-                                                                    </div>
+                                                                    {selected && (
+                                                                        <span className="badge bg-success bg-opacity-25 text-success" style={{ fontSize: 10 }}>✓ Selected</span>
+                                                                    )}
                                                                 </div>
-                                                                {isResolved ? (
-                                                                    <span className="badge bg-success bg-opacity-25 text-success small">✓ Rescheduled</span>
+                                                                <div className="text-secondary mb-2" style={{ fontSize: 11 }}>
+                                                                    Current: {new Date(c.start_time).toLocaleString()} – {new Date(c.end_time).toLocaleTimeString()}
+                                                                </div>
+
+                                                                {eventSuggestions.length === 0 ? (
+                                                                    <div className="small text-warning p-2 rounded-3" style={{ backgroundColor: "rgba(255, 193, 7, 0.1)" }}>
+                                                                        No available time slots found. Try reporting the conflict to the creator.
+                                                                    </div>
                                                                 ) : (
-                                                                    <span className="badge bg-warning bg-opacity-25 text-warning small" style={{ cursor: "pointer" }}>
-                                                                        {isEditing ? "▾" : "Edit Time"}
-                                                                    </span>
+                                                                    <div className="d-flex flex-column gap-1">
+                                                                        {eventSuggestions.map((sug, idx) => {
+                                                                            const isSelected = selected?.new_start === sug.new_start && selected?.new_end === sug.new_end;
+                                                                            const startDt = new Date(sug.new_start);
+                                                                            const endDt = new Date(sug.new_end);
+                                                                            const originalDt = new Date(c.start_time);
+                                                                            const sameDay = startDt.toDateString() === originalDt.toDateString();
+                                                                            const timeLabel = `${startDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – ${endDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+                                                                            const dateLabel = sameDay ? "" : ` (${startDt.toLocaleDateString([], { month: 'short', day: 'numeric' })})`;
+                                                                            return (
+                                                                                <div
+                                                                                    key={idx}
+                                                                                    className="p-2 rounded-3 d-flex align-items-center justify-content-between"
+                                                                                    style={{
+                                                                                        backgroundColor: isSelected ? "rgba(25, 135, 84, 0.15)" : "rgba(255, 255, 255, 0.05)",
+                                                                                        border: isSelected ? "1px solid rgba(25, 135, 84, 0.5)" : "1px solid rgba(255, 255, 255, 0.08)",
+                                                                                        cursor: "pointer",
+                                                                                        transition: "all 0.15s ease",
+                                                                                    }}
+                                                                                    onClick={() => setSelectedSuggestions(prev => ({ ...prev, [c.event_id]: sug }))}
+                                                                                >
+                                                                                    <div className="d-flex align-items-center gap-2">
+                                                                                        <div
+                                                                                            className="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+                                                                                            style={{
+                                                                                                width: 20, height: 20,
+                                                                                                border: isSelected ? "2px solid #198754" : "2px solid rgba(255,255,255,0.3)",
+                                                                                                backgroundColor: isSelected ? "#198754" : "transparent",
+                                                                                            }}
+                                                                                        >
+                                                                                            {isSelected && (
+                                                                                                <svg width="12" height="12" fill="white" viewBox="0 0 16 16">
+                                                                                                    <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0"/>
+                                                                                                </svg>
+                                                                                            )}
+                                                                                        </div>
+                                                                                        <div>
+                                                                                            <div className="text-white small fw-semibold">{timeLabel}{dateLabel}</div>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                    {idx === 0 && (
+                                                                                        <span className="badge bg-primary bg-opacity-25 text-primary" style={{ fontSize: 9 }}>Closest</span>
+                                                                                    )}
+                                                                                </div>
+                                                                            );
+                                                                        })}
+                                                                    </div>
                                                                 )}
                                                             </div>
-                                                            {isEditing && !isResolved && (
-                                                                <div className="p-2 border-top" style={{ borderColor: "rgba(255,255,255,0.1)", backgroundColor: "rgba(0,0,0,0.15)" }}>
-                                                                    <div className="d-flex flex-column gap-2 mb-2">
-                                                                        <div>
-                                                                            <label className="form-label text-white-50 mb-1" style={{ fontSize: 11 }}>New Start</label>
-                                                                            <input
-                                                                                type="datetime-local"
-                                                                                className="form-control form-control-sm bg-dark text-white border-secondary"
-                                                                                value={editStart}
-                                                                                onChange={(e) => setEditStart(e.target.value)}
-                                                                            />
-                                                                        </div>
-                                                                        <div>
-                                                                            <label className="form-label text-white-50 mb-1" style={{ fontSize: 11 }}>New End</label>
-                                                                            <input
-                                                                                type="datetime-local"
-                                                                                className="form-control form-control-sm bg-dark text-white border-secondary"
-                                                                                value={editEnd}
-                                                                                onChange={(e) => setEditEnd(e.target.value)}
-                                                                            />
-                                                                        </div>
-                                                                    </div>
-                                                                    {editError && (
-                                                                        <div className="small mb-2 p-2 rounded-3 d-flex align-items-center gap-2" style={{ backgroundColor: "rgba(220, 53, 69, 0.15)", border: "1px solid rgba(220, 53, 69, 0.4)", color: "#ff6b6b" }}>
-                                                                            <svg width="14" height="14" fill="currentColor" viewBox="0 0 16 16" className="flex-shrink-0">
-                                                                                <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5m.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2"/>
-                                                                            </svg>
-                                                                            <span>{editError}</span>
-                                                                        </div>
-                                                                    )}
-                                                                    <div className="d-flex gap-2">
-                                                                        <button
-                                                                            className="btn btn-sm btn-primary rounded-pill px-3 fw-bold"
-                                                                            disabled={editSaving || !editStart || !editEnd}
-                                                                            onClick={async (e) => {
-                                                                                e.stopPropagation();
-                                                                                if (!editStart || !editEnd) return;
-                                                                                setEditSaving(true);
-                                                                                setEditError(null);
-                                                                                try {
-                                                                                    const success = await onUpdateEventTime(c.event_id, {
-                                                                                        start_time: new Date(editStart).toISOString(),
-                                                                                        end_time: new Date(editEnd).toISOString(),
-                                                                                    });
-                                                                                    if (success) {
-                                                                                        setResolvedEventIds(prev => new Set([...prev, c.event_id]));
-                                                                                        setEditingEventId(null);
-                                                                                    } else {
-                                                                                        setEditError("Failed to update event time");
-                                                                                    }
-                                                                                } catch (err) {
-                                                                                    setEditError(err instanceof Error ? err.message : "Failed to update");
-                                                                                } finally {
-                                                                                    setEditSaving(false);
-                                                                                }
-                                                                            }}
-                                                                        >
-                                                                            {editSaving ? "Saving..." : "Save"}
-                                                                        </button>
-                                                                        <button
-                                                                            className="btn btn-sm btn-outline-secondary rounded-pill px-3"
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                setEditingEventId(null);
-                                                                                setEditError(null);
-                                                                            }}
-                                                                        >
-                                                                            Cancel
-                                                                        </button>
-                                                                    </div>
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                            {/* Accept button — enabled only after ALL conflicting events are rescheduled */}
-                                            <div className="d-flex flex-column gap-2">
-                                                {(() => {
-                                                    const allResolved = conflictResult.conflicts.every(c => resolvedEventIds.has(c.event_id));
-                                                    const someResolved = resolvedEventIds.size > 0;
-                                                    return (
-                                                        <>
-                                                            {someResolved && !allResolved && (
-                                                                <div className="small p-2 rounded-3 d-flex align-items-center gap-2" style={{ backgroundColor: "rgba(220, 53, 69, 0.12)", border: "1px solid rgba(220, 53, 69, 0.3)", color: "#ff6b6b" }}>
-                                                                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 16 16" className="flex-shrink-0">
-                                                                        <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5m.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2"/>
-                                                                    </svg>
-                                                                    <span>All conflicting events must be rescheduled before accepting.</span>
-                                                                </div>
-                                                            )}
-                                                            <button
-                                                                className="btn btn-success rounded-pill px-4 fw-bold shadow-sm"
-                                                                disabled={!allResolved}
-                                                                onClick={() => onForceAccept(conflictResult.invitation_id!)}
-                                                            >
-                                                                {allResolved
-                                                                    ? "✓ Accept Collaboration Event"
-                                                                    : `Reschedule all conflicts first (${resolvedEventIds.size}/${conflictResult.conflicts.length})`}
-                                                            </button>
-                                                        </>
-                                                    );
-                                                })()}
-                                                <button 
-                                                    className="btn btn-link text-secondary small p-0 mt-1"
-                                                    onClick={() => setEditMode(false)}
-                                                >
-                                                    ← Back
-                                                </button>
-                                            </div>
+                                                        );
+                                                    })}
+
+                                                    {/* Apply & Accept button */}
+                                                    {(() => {
+                                                        const allSelected = conflictResult.conflicts.every(c => selectedSuggestions[c.event_id]);
+                                                        const hasSuggestions = conflictResult.conflicts.some(c => (suggestions[c.event_id] || []).length > 0);
+                                                        return (
+                                                            <div className="d-flex flex-column gap-2 mt-2">
+                                                                {hasSuggestions && (
+                                                                    <button
+                                                                        className="btn btn-success rounded-pill px-4 fw-bold shadow-sm"
+                                                                        disabled={!allSelected || applyingReschedule}
+                                                                        onClick={handleApplyAndAccept}
+                                                                    >
+                                                                        {applyingReschedule
+                                                                            ? "Applying..."
+                                                                            : allSelected
+                                                                                ? "✓ Apply & Accept Collaboration"
+                                                                                : `Select time for all events (${Object.keys(selectedSuggestions).length}/${conflictResult.conflicts.length})`}
+                                                                    </button>
+                                                                )}
+                                                                <button
+                                                                    className="btn btn-outline-light rounded-pill px-4 fw-bold border shadow-sm"
+                                                                    onClick={() => onReportConflict(conflictResult.invitation_id!)}
+                                                                >
+                                                                    Report Conflict to Creator
+                                                                </button>
+                                                                <button 
+                                                                    className="btn btn-link text-secondary small p-0 mt-1"
+                                                                    onClick={() => setSuggestMode(false)}
+                                                                >
+                                                                    ← Back
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    })()}
+                                                </>
+                                            )}
                                         </>
                                     )}
                                 </div>
