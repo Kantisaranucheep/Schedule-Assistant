@@ -25,17 +25,27 @@ DEFAULT_CALENDAR_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 class EventRepository:
     """Repository for event database operations."""
     
-    def __init__(self, db: AsyncSession, timezone: str = "Asia/Bangkok"):
+    def __init__(self, db: AsyncSession, timezone: str = "Asia/Bangkok", user_id: Optional[uuid.UUID] = None):
         self.db = db
         self.timezone = timezone
+        self.user_id = user_id or DEFAULT_USER_ID
         try:
             self.tz = ZoneInfo(timezone)
         except Exception:
             self.tz = ZoneInfo("Asia/Bangkok")
     
     async def get_calendar_id(self) -> uuid.UUID:
-        """Get or create the default calendar."""
-        # Try to find existing calendar
+        """Get the calendar for the current user."""
+        # Try to find a calendar for this user
+        result = await self.db.execute(
+            select(Calendar).where(Calendar.user_id == self.user_id).limit(1)
+        )
+        calendar = result.scalar_one_or_none()
+        
+        if calendar:
+            return calendar.id
+        
+        # Fallback to default calendar
         result = await self.db.execute(
             select(Calendar).where(Calendar.id == DEFAULT_CALENDAR_ID)
         )
@@ -44,16 +54,6 @@ class EventRepository:
         if calendar:
             return calendar.id
         
-        # Try to find any calendar for the default user
-        result = await self.db.execute(
-            select(Calendar).where(Calendar.user_id == DEFAULT_USER_ID).limit(1)
-        )
-        calendar = result.scalar_one_or_none()
-        
-        if calendar:
-            return calendar.id
-        
-        # Return default if no calendar found
         return DEFAULT_CALENDAR_ID
     
     async def get_events_on_date(
@@ -389,7 +389,7 @@ class EventRepository:
         Returns merged priorities (extracted + defaults).
         Falls back to default weights if no profile exists.
         """
-        uid = user_id or DEFAULT_USER_ID
+        uid = user_id or self.user_id
         result = await self.db.execute(
             select(UserProfile).where(UserProfile.user_id == uid)
         )

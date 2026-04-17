@@ -42,6 +42,7 @@ export interface ChatMessageRequest {
   message: string;
   session_id?: string;
   calendar_id?: string;
+  user_id?: string;
   timezone?: string;
 }
 
@@ -91,6 +92,7 @@ export async function sendChatMessage(
       message: request.message,
       session_id: request.session_id,
       calendar_id: request.calendar_id,
+      user_id: request.user_id,
       timezone: request.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
     }),
   });

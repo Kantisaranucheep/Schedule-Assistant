@@ -25,10 +25,18 @@ class EventService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get(self, event_id: UUID) -> Optional[Event]:
-        """Get event by ID."""
+    async def _get_raw(self, event_id: UUID) -> Optional[Event]:
+        """Get raw Event model object by ID (for internal use)."""
         result = await self.db.execute(select(Event).where(Event.id == event_id))
         return result.scalar_one_or_none()
+
+    async def get(self, event_id: UUID) -> Optional[dict]:
+        """Get event by ID, enriched with collaborator usernames."""
+        event = await self._get_raw(event_id)
+        if not event:
+            return None
+        enriched = await self._enrich_with_collaborators([event])
+        return enriched[0]
 
     async def get_by_calendar(
         self,
@@ -67,7 +75,42 @@ class EventService:
 
         query = query.order_by(Event.start_time)
         result = await self.db.execute(query)
-        return list(result.scalars().all())
+        events = list(result.scalars().all())
+        return await self._enrich_with_collaborators(events)
+
+    async def _enrich_with_collaborators(self, events: List[Event]) -> List[dict]:
+        """Enrich events with collaborator usernames for API responses."""
+        if not events:
+            return []
+        event_ids = [e.id for e in events]
+        collab_q = await self.db.execute(
+            select(EventCollaborator.event_id, User.username)
+            .join(User, User.id == EventCollaborator.user_id)
+            .where(EventCollaborator.event_id.in_(event_ids))
+        )
+        collab_map: dict = {}
+        for event_id, username in collab_q.all():
+            collab_map.setdefault(event_id, []).append(username)
+        
+        enriched = []
+        for e in events:
+            d = {
+                "id": e.id,
+                "calendar_id": e.calendar_id,
+                "title": e.title,
+                "start_time": e.start_time,
+                "end_time": e.end_time,
+                "all_day": e.all_day,
+                "location": e.location,
+                "notes": e.notes,
+                "category_id": e.category_id,
+                "status": e.status,
+                "created_at": e.created_at,
+                "updated_at": e.updated_at,
+                "collaborator_usernames": collab_map.get(e.id, []),
+            }
+            enriched.append(d)
+        return enriched
 
     async def check_conflicts(
         self,
@@ -141,7 +184,7 @@ class EventService:
 
     async def update(self, event_id: UUID, data: EventUpdate) -> Optional[Event]:
         """Update an event."""
-        event = await self.get(event_id)
+        event = await self._get_raw(event_id)
         if not event:
             return None
 
@@ -159,7 +202,7 @@ class EventService:
                 raise HTTPException(status_code=400, detail=f"Users not found: {', '.join(missing)}")
             invitees = found_users
 
-        update_data = data.model_dump(exclude_unset=True, exclude={"collaborator_usernames"})
+        update_data = data.model_dump(exclude_unset=True, exclude={"collaborator_usernames", "timezone"})
         for field, value in update_data.items():
             setattr(event, field, value)
 
@@ -194,7 +237,7 @@ class EventService:
 
     async def delete(self, event_id: UUID, soft: bool = True) -> bool:
         """Delete an event. Soft delete marks as cancelled."""
-        event = await self.get(event_id)
+        event = await self._get_raw(event_id)
         if not event:
             return False
 

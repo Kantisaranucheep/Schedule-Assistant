@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { NotificationSettings, NotificationTimePreference } from "../../types";
 import { NOTIFICATION_TIME_OPTIONS, minutesToLabel } from "../../services/settings.api";
-import { InvitationResponse } from "../../services/collaborators.api";
+import { InvitationResponse, AcceptInvitationResult, ConflictReport } from "../../services/collaborators.api";
+import { EventUpdateRequest } from "../../services/events.api";
 
 interface NotificationModalProps {
     isOpen: boolean;
@@ -13,6 +14,14 @@ interface NotificationModalProps {
     invitations: InvitationResponse[];
     onAcceptInvitation: (id: string) => Promise<void>;
     onDeclineInvitation: (id: string) => Promise<void>;
+    conflictResult: AcceptInvitationResult | null;
+    onForceAccept: (invitationId: string) => Promise<void>;
+    onReportConflict: (invitationId: string, message?: string) => Promise<void>;
+    onDismissConflict: () => void;
+    conflictReportedMessage: string | null;
+    receivedConflictReports: ConflictReport[];
+    onDismissConflictReport: (invitationId: string) => void;
+    onUpdateEventTime: (eventId: string, update: EventUpdateRequest) => Promise<boolean>;
 }
 
 
@@ -25,10 +34,44 @@ export default function NotificationModal({
     onEmailClick,
     invitations,
     onAcceptInvitation,
-    onDeclineInvitation
+    onDeclineInvitation,
+    conflictResult,
+    onForceAccept,
+    onReportConflict,
+    onDismissConflict,
+    conflictReportedMessage,
+    receivedConflictReports,
+    onDismissConflictReport,
+    onUpdateEventTime,
 }: NotificationModalProps) {
     const [showTimePicker, setShowTimePicker] = useState(false);
     const [activeTab, setActiveTab] = useState<'invites' | 'settings'>('invites');
+    // Conflict resolution: edit mode state
+    const [editMode, setEditMode] = useState(false);
+    const [editingEventId, setEditingEventId] = useState<string | null>(null);
+    const [editStart, setEditStart] = useState("");
+    const [editEnd, setEditEnd] = useState("");
+    const [editSaving, setEditSaving] = useState(false);
+    const [editError, setEditError] = useState<string | null>(null);
+    const [resolvedEventIds, setResolvedEventIds] = useState<Set<string>>(new Set());
+
+    // Reset edit state when conflict result changes
+    useEffect(() => {
+        if (!conflictResult) {
+            setEditMode(false);
+            setEditingEventId(null);
+            setEditStart("");
+            setEditEnd("");
+            setEditError(null);
+            setResolvedEventIds(new Set());
+        }
+    }, [conflictResult]);
+
+    // Helper to format Date as datetime-local input value
+    const toLocalDatetimeString = (dt: Date) => {
+        const pad = (n: number) => n.toString().padStart(2, "0");
+        return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+    };
 
     if (!isOpen) return null;
 
@@ -114,12 +157,11 @@ export default function NotificationModal({
             onClick={onClose}
         >
             <div
-                className="bg-dark bg-opacity-75 text-white rounded-4 shadow-lg border border-secondary overflow-hidden position-relative"
+                className="bg-dark bg-opacity-75 text-white rounded-4 shadow-lg border border-secondary position-relative d-flex flex-column"
                 style={{
                     width: "min(500px, 94vw)",
-                    maxHeight: "90vh",
+                    maxHeight: "85vh",
                     backdropFilter: "blur(12px)",
-                    overflowY: "auto"
                 }}
                 onClick={(e) => e.stopPropagation()}
             >
@@ -167,14 +209,271 @@ export default function NotificationModal({
 
 
                 {/* Content: Tabs */}
-                <div className="p-4 d-flex flex-column gap-4" style={{background: 'rgba(255,255,255,0.03)', borderRadius: 24, boxShadow: '0 2px 16px 0 rgba(0,0,0,0.10)'}}>
+                <div className="p-4 d-flex flex-column gap-4" style={{background: 'rgba(255,255,255,0.03)', borderRadius: 24, boxShadow: '0 2px 16px 0 rgba(0,0,0,0.10)', overflowY: 'auto', flex: 1, minHeight: 0}}>
                     {activeTab === 'invites' && (
                         <div className="mb-2">
                             <div className="fw-bold mb-3 d-flex align-items-center gap-2" style={{ fontSize: 18 }}>
                                 <svg width="20" height="20" fill="currentColor" className="bi bi-people" viewBox="0 0 16 16"><path d="M13 7a2 2 0 1 0-4 0 2 2 0 0 0 4 0zM6 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm7 8a3 3 0 0 0-2.824-2H5.824A3 3 0 0 0 3 16h10zm-9.995-.15A2.01 2.01 0 0 1 5.824 14h4.352a2.01 2.01 0 0 1 2.819 1.85H3.005z"/></svg>
                                 Invitations
                             </div>
-                            {invitations.length === 0 ? (
+
+                            {/* Conflict Reported Success Message (for invitee) */}
+                            {conflictReportedMessage && (
+                                <div className="alert alert-info rounded-4 small mb-3 d-flex align-items-center gap-2" style={{ backgroundColor: "rgba(13, 202, 240, 0.15)", border: "1px solid rgba(13, 202, 240, 0.3)", color: "#0dcaf0" }}>
+                                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.399l-.254.001-.082-.381 2.01-.499zM8 5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2"/></svg>
+                                    {conflictReportedMessage}
+                                </div>
+                            )}
+
+                            {/* Conflict Reports received (for event creator) */}
+                            {receivedConflictReports.length > 0 && (
+                                <div className="mb-3">
+                                    {receivedConflictReports.map((report) => (
+                                        <div key={report.invitation_id} className="rounded-4 shadow-sm p-3 mb-2 border" style={{ backgroundColor: "rgba(220, 53, 69, 0.1)", borderColor: "rgba(220, 53, 69, 0.3)" }}>
+                                            <div className="d-flex align-items-center gap-2 mb-2">
+                                                <svg width="18" height="18" fill="#dc3545" viewBox="0 0 16 16">
+                                                    <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5m.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2"/>
+                                                </svg>
+                                                <span className="fw-bold small" style={{ color: "#dc3545" }}>Conflict Report</span>
+                                            </div>
+                                            <div className="small text-white mb-1">
+                                                <span className="fw-semibold">{report.reporter_username}</span> reported a conflict for <span className="fw-semibold">&ldquo;{report.event_title}&rdquo;</span>
+                                            </div>
+                                            <div className="small text-secondary mb-2">{report.message}</div>
+                                            <div className="small text-white-50 mb-2">
+                                                Please create a new event at a different time.
+                                            </div>
+                                            <button
+                                                className="btn btn-sm btn-outline-secondary rounded-pill px-3"
+                                                onClick={() => onDismissConflictReport(report.invitation_id)}
+                                            >
+                                                Dismiss
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Conflict Resolution Dialog */}
+                            {conflictResult && conflictResult.status === "conflict" && conflictResult.invitation_id && (
+                                <div className="rounded-4 shadow p-4 mb-3 border" style={{ backgroundColor: "rgba(255, 193, 7, 0.1)", borderColor: "rgba(255, 193, 7, 0.4)" }}>
+                                    <div className="fw-bold mb-2 d-flex align-items-center gap-2" style={{ color: "#ffc107", fontSize: 16 }}>
+                                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                                            <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5m.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2"/>
+                                        </svg>
+                                        Schedule Conflict Detected
+                                    </div>
+                                    <div className="small text-secondary mb-2">
+                                        {conflictResult.message}
+                                    </div>
+                                    <div className="small mb-2">
+                                        <span className="text-white-50">Collaboration event: </span>
+                                        <span className="fw-semibold text-white">{conflictResult.collab_event_title}</span>
+                                        <div className="text-secondary">
+                                            {conflictResult.collab_event_start && new Date(conflictResult.collab_event_start).toLocaleString()} 
+                                            {" – "}
+                                            {conflictResult.collab_event_end && new Date(conflictResult.collab_event_end).toLocaleTimeString()}
+                                        </div>
+                                    </div>
+
+                                    {!editMode ? (
+                                        <>
+                                            <div className="small mb-3">
+                                                <span className="text-white-50">Your conflicting events:</span>
+                                                {conflictResult.conflicts.map((c) => (
+                                                    <div key={c.event_id} className="ms-2 mt-1 p-2 rounded-3" style={{ backgroundColor: "rgba(255, 255, 255, 0.05)" }}>
+                                                        <span className="fw-semibold text-white">{c.title}</span>
+                                                        <div className="text-secondary" style={{ fontSize: 12 }}>
+                                                            {new Date(c.start_time).toLocaleString()} – {new Date(c.end_time).toLocaleTimeString()}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <div className="small text-white-50 mb-3">
+                                                Choose how to resolve this conflict:
+                                            </div>
+                                            <div className="d-flex flex-column gap-2">
+                                                <button 
+                                                    className="btn btn-warning rounded-pill px-4 fw-bold shadow-sm text-dark"
+                                                    onClick={() => setEditMode(true)}
+                                                >
+                                                    Reschedule My Event &amp; Accept
+                                                </button>
+                                                <button 
+                                                    className="btn btn-outline-light rounded-pill px-4 fw-bold border shadow-sm"
+                                                    onClick={() => onReportConflict(conflictResult.invitation_id!)}
+                                                >
+                                                    Report Conflict to Creator
+                                                </button>
+                                                <button 
+                                                    className="btn btn-link text-secondary small p-0 mt-1"
+                                                    onClick={onDismissConflict}
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            {/* Edit mode: reschedule conflicting events */}
+                                            <div className="small text-white-50 mb-2">
+                                                Click a conflicting event to change its time, then accept the collaboration:
+                                            </div>
+                                            <div className="d-flex flex-column gap-2 mb-3">
+                                                {conflictResult.conflicts.map((c) => {
+                                                    const isEditing = editingEventId === c.event_id;
+                                                    const isResolved = resolvedEventIds.has(c.event_id);
+
+                                                    return (
+                                                        <div key={c.event_id} className="rounded-3 border overflow-hidden" style={{ backgroundColor: isResolved ? "rgba(25, 135, 84, 0.1)" : "rgba(255, 255, 255, 0.05)", borderColor: isResolved ? "rgba(25, 135, 84, 0.4)" : "rgba(255, 255, 255, 0.1)" }}>
+                                                            <div
+                                                                className="p-2 d-flex align-items-center justify-content-between"
+                                                                style={{ cursor: isResolved ? "default" : "pointer" }}
+                                                                onClick={() => {
+                                                                    if (isResolved) return;
+                                                                    if (isEditing) {
+                                                                        setEditingEventId(null);
+                                                                    } else {
+                                                                        setEditingEventId(c.event_id);
+                                                                        // Pre-fill with current times
+                                                                        const startDt = new Date(c.start_time);
+                                                                        const endDt = new Date(c.end_time);
+                                                                        setEditStart(toLocalDatetimeString(startDt));
+                                                                        setEditEnd(toLocalDatetimeString(endDt));
+                                                                        setEditError(null);
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <div>
+                                                                    <span className="fw-semibold text-white small">{c.title}</span>
+                                                                    <div className="text-secondary" style={{ fontSize: 11 }}>
+                                                                        {new Date(c.start_time).toLocaleString()} – {new Date(c.end_time).toLocaleTimeString()}
+                                                                    </div>
+                                                                </div>
+                                                                {isResolved ? (
+                                                                    <span className="badge bg-success bg-opacity-25 text-success small">✓ Rescheduled</span>
+                                                                ) : (
+                                                                    <span className="badge bg-warning bg-opacity-25 text-warning small" style={{ cursor: "pointer" }}>
+                                                                        {isEditing ? "▾" : "Edit Time"}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            {isEditing && !isResolved && (
+                                                                <div className="p-2 border-top" style={{ borderColor: "rgba(255,255,255,0.1)", backgroundColor: "rgba(0,0,0,0.15)" }}>
+                                                                    <div className="d-flex flex-column gap-2 mb-2">
+                                                                        <div>
+                                                                            <label className="form-label text-white-50 mb-1" style={{ fontSize: 11 }}>New Start</label>
+                                                                            <input
+                                                                                type="datetime-local"
+                                                                                className="form-control form-control-sm bg-dark text-white border-secondary"
+                                                                                value={editStart}
+                                                                                onChange={(e) => setEditStart(e.target.value)}
+                                                                            />
+                                                                        </div>
+                                                                        <div>
+                                                                            <label className="form-label text-white-50 mb-1" style={{ fontSize: 11 }}>New End</label>
+                                                                            <input
+                                                                                type="datetime-local"
+                                                                                className="form-control form-control-sm bg-dark text-white border-secondary"
+                                                                                value={editEnd}
+                                                                                onChange={(e) => setEditEnd(e.target.value)}
+                                                                            />
+                                                                        </div>
+                                                                    </div>
+                                                                    {editError && (
+                                                                        <div className="small mb-2 p-2 rounded-3 d-flex align-items-center gap-2" style={{ backgroundColor: "rgba(220, 53, 69, 0.15)", border: "1px solid rgba(220, 53, 69, 0.4)", color: "#ff6b6b" }}>
+                                                                            <svg width="14" height="14" fill="currentColor" viewBox="0 0 16 16" className="flex-shrink-0">
+                                                                                <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5m.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2"/>
+                                                                            </svg>
+                                                                            <span>{editError}</span>
+                                                                        </div>
+                                                                    )}
+                                                                    <div className="d-flex gap-2">
+                                                                        <button
+                                                                            className="btn btn-sm btn-primary rounded-pill px-3 fw-bold"
+                                                                            disabled={editSaving || !editStart || !editEnd}
+                                                                            onClick={async (e) => {
+                                                                                e.stopPropagation();
+                                                                                if (!editStart || !editEnd) return;
+                                                                                setEditSaving(true);
+                                                                                setEditError(null);
+                                                                                try {
+                                                                                    const success = await onUpdateEventTime(c.event_id, {
+                                                                                        start_time: new Date(editStart).toISOString(),
+                                                                                        end_time: new Date(editEnd).toISOString(),
+                                                                                    });
+                                                                                    if (success) {
+                                                                                        setResolvedEventIds(prev => new Set([...prev, c.event_id]));
+                                                                                        setEditingEventId(null);
+                                                                                    } else {
+                                                                                        setEditError("Failed to update event time");
+                                                                                    }
+                                                                                } catch (err) {
+                                                                                    setEditError(err instanceof Error ? err.message : "Failed to update");
+                                                                                } finally {
+                                                                                    setEditSaving(false);
+                                                                                }
+                                                                            }}
+                                                                        >
+                                                                            {editSaving ? "Saving..." : "Save"}
+                                                                        </button>
+                                                                        <button
+                                                                            className="btn btn-sm btn-outline-secondary rounded-pill px-3"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setEditingEventId(null);
+                                                                                setEditError(null);
+                                                                            }}
+                                                                        >
+                                                                            Cancel
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                            {/* Accept button — enabled only after ALL conflicting events are rescheduled */}
+                                            <div className="d-flex flex-column gap-2">
+                                                {(() => {
+                                                    const allResolved = conflictResult.conflicts.every(c => resolvedEventIds.has(c.event_id));
+                                                    const someResolved = resolvedEventIds.size > 0;
+                                                    return (
+                                                        <>
+                                                            {someResolved && !allResolved && (
+                                                                <div className="small p-2 rounded-3 d-flex align-items-center gap-2" style={{ backgroundColor: "rgba(220, 53, 69, 0.12)", border: "1px solid rgba(220, 53, 69, 0.3)", color: "#ff6b6b" }}>
+                                                                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 16 16" className="flex-shrink-0">
+                                                                        <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5m.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2"/>
+                                                                    </svg>
+                                                                    <span>All conflicting events must be rescheduled before accepting.</span>
+                                                                </div>
+                                                            )}
+                                                            <button
+                                                                className="btn btn-success rounded-pill px-4 fw-bold shadow-sm"
+                                                                disabled={!allResolved}
+                                                                onClick={() => onForceAccept(conflictResult.invitation_id!)}
+                                                            >
+                                                                {allResolved
+                                                                    ? "✓ Accept Collaboration Event"
+                                                                    : `Reschedule all conflicts first (${resolvedEventIds.size}/${conflictResult.conflicts.length})`}
+                                                            </button>
+                                                        </>
+                                                    );
+                                                })()}
+                                                <button 
+                                                    className="btn btn-link text-secondary small p-0 mt-1"
+                                                    onClick={() => setEditMode(false)}
+                                                >
+                                                    ← Back
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
+                            {invitations.length === 0 && !conflictResult && receivedConflictReports.length === 0 ? (
                                 <div className="small text-secondary text-center py-4">No new invitations</div>
                             ) : (
                                 <div className="d-flex flex-column gap-3 mb-2">

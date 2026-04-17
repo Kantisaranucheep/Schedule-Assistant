@@ -197,6 +197,25 @@ export default function ViewEventModal({
                                 <div className="text-dark small" style={{ whiteSpace: "pre-wrap" }}>{event.notes}</div>
                             </div>
                         )}
+
+                        {event.collaborators && event.collaborators.length > 0 && (
+                            <div className="d-flex gap-3 align-items-start mb-2">
+                                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" className="text-secondary opacity-75 mt-1">
+                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                    <circle cx="9" cy="7" r="4"></circle>
+                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                                </svg>
+                                <div className="text-dark small">
+                                    <div className="fw-semibold mb-1">Collaborators</div>
+                                    {event.collaborators.map((name, i) => (
+                                        <span key={i} className="badge bg-primary bg-opacity-10 text-primary me-1 mb-1">
+                                            {name}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

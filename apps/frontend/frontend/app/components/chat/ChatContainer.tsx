@@ -29,9 +29,10 @@ interface Message {
 
 interface ChatContainerProps {
   calendarId?: string;
+  userId?: string;
 }
 
-export default function ChatContainer({ calendarId }: ChatContainerProps) {
+export default function ChatContainer({ calendarId, userId }: ChatContainerProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [sessionId, setSessionId] = useState<string>("");
   const [input, setInput] = useState("");
@@ -135,6 +136,7 @@ export default function ChatContainer({ calendarId }: ChatContainerProps) {
           message: text,
           session_id: sessionId,
           calendar_id: calendarId,
+          user_id: userId,
         });
 
         // Clear input on success

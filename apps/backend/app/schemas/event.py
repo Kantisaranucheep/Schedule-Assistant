@@ -38,6 +38,8 @@ class EventUpdate(BaseModel):
     notes: Optional[str] = None
     category_id: Optional[UUID] = None
     status: Optional[str] = Field(default=None, pattern=r"^(confirmed|cancelled|tentative)$")
+    collaborator_usernames: Optional[list[str]] = None
+    timezone: Optional[str] = Field(default=None, max_length=50)
 
 
 class EventResponse(EventBase):

@@ -71,6 +71,10 @@ class ChatMessageRequest(BaseModel):
         default=None,
         description="Calendar ID for event operations"
     )
+    user_id: Optional[str] = Field(
+        default=None,
+        description="User ID for identifying whose calendar to use"
+    )
     timezone: str = Field(
         default="Asia/Bangkok",
         description="User's timezone (IANA format)"

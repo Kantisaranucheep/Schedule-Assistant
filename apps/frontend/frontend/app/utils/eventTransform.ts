@@ -49,6 +49,7 @@ export function transformApiEventToEv(
     categoryId: apiEvent.category_id || undefined,
     location: apiEvent.location || "",
     notes: apiEvent.notes || "",
+    collaborators: apiEvent.collaborator_usernames || [],
   };
 }
 

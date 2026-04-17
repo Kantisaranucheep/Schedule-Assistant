@@ -31,9 +31,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/scheduling", tags=["scheduling"])
 
-DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001"
-
-
 def _minutes_to_time_str(minutes: int) -> str:
     h, m = divmod(minutes, 60)
     return f"{h:02d}:{m:02d}"
@@ -115,7 +112,7 @@ async def _get_day_events(
 @router.post("/reschedule", response_model=RescheduleResponse)
 async def reschedule_event(
     data: RescheduleRequest,
-    user_id: str = Query(default=DEFAULT_USER_ID),
+    user_id: str = Query(..., description="User ID for priority config"),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -186,7 +183,7 @@ async def reschedule_event(
 @router.post("/priority", response_model=EventPriorityCheckResponse)
 async def check_event_priority(
     data: EventPriorityCheckRequest,
-    user_id: str = Query(default=DEFAULT_USER_ID),
+    user_id: str = Query(..., description="User ID for priority config"),
     db: AsyncSession = Depends(get_db),
 ):
     """

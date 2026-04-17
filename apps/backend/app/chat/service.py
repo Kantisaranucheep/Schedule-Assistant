@@ -46,12 +46,20 @@ class ChatAgentService:
          -> SELECT_PREFERENCE -> SELECT_SLOT -> CONFIRM_ACTION -> INIT
     """
     
-    def __init__(self, db: AsyncSession, timezone: str = "Asia/Bangkok"):
+    def __init__(self, db: AsyncSession, timezone: str = "Asia/Bangkok", user_id: str | None = None):
         self.db = db
         self.timezone = timezone
         self.llm = LLMService()
         self.prolog = get_prolog_service()
-        self.repo = EventRepository(db, timezone)
+        # Parse user_id and pass to repository so events go to the correct calendar
+        import uuid as _uuid
+        parsed_user_id = None
+        if user_id:
+            try:
+                parsed_user_id = _uuid.UUID(user_id)
+            except ValueError:
+                pass
+        self.repo = EventRepository(db, timezone, user_id=parsed_user_id)
     
     def _get_session(self, session_id: str) -> SessionContext:
         """Get or create session context."""

@@ -27,6 +27,7 @@ export interface EventResponse {
   status: string;
   created_at: string;
   updated_at: string;
+  collaborator_usernames?: string[];
 }
 
 export interface TaskResponse {
@@ -190,9 +191,11 @@ export async function deleteEvent(eventId: string, soft: boolean = true): Promis
  */
 export async function updateEvent(
   eventId: string,
-  event: EventUpdateRequest
+  event: EventUpdateRequest,
+  checkConflicts: boolean = true
 ): Promise<EventResponse> {
-  const res = await fetch(`${API_BASE}/events/${eventId}`, {
+  const params = new URLSearchParams({ check_conflicts: String(checkConflicts) });
+  const res = await fetch(`${API_BASE}/events/${eventId}?${params}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(event),

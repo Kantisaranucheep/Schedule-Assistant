@@ -77,7 +77,7 @@ async def update_event(
     service = EventService(db)
 
     if check_conflicts and (data.start_time or data.end_time):
-        existing = await service.get(event_id)
+        existing = await service._get_raw(event_id)
         if existing:
             start = data.start_time or existing.start_time
             end = data.end_time or existing.end_time

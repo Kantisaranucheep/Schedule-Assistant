@@ -19,7 +19,7 @@ import {
   dayHeaderLabel,
   parseISODate,
 } from "./utils";
-import { deleteEvent, deleteTask } from "./services/events.api";
+import { deleteEvent, deleteTask, updateEvent } from "./services/events.api";
 import { fetchUserSettings, saveUserSettings } from "./services/settings.api";
 
 import Sidebar from "./components/Sidebar";
@@ -64,7 +64,19 @@ export default function Home() {
   } = useEvents();
 
   // Pass refetch to useInvitations so events reload after accepting invitation
-  const { invitations, acceptInvitation, declineInvitation, refresh: refetchInvitations } = useInvitations(refetch);
+  const { 
+    invitations, 
+    acceptInvitation, 
+    forceAcceptInvitation,
+    reportConflictToCreator,
+    dismissConflict,
+    conflictResult,
+    conflictReportedMessage,
+    declineInvitation,
+    receivedConflictReports,
+    dismissConflictReport,
+    refresh: refetchInvitations 
+  } = useInvitations(refetch);
 
   // Local events overlay (for immediate UI updates before API sync)
   const [localEvents, setLocalEvents] = useState<EventMap>({});
@@ -607,6 +619,29 @@ export default function Home() {
               refetch();
             }}
             onDeclineInvitation={declineInvitation}
+            conflictResult={conflictResult}
+            onForceAccept={async (id) => {
+              await forceAcceptInvitation(id);
+              refetch();
+            }}
+            onReportConflict={reportConflictToCreator}
+            onDismissConflict={dismissConflict}
+            conflictReportedMessage={conflictReportedMessage}
+            receivedConflictReports={receivedConflictReports}
+            onDismissConflictReport={dismissConflictReport}
+            onUpdateEventTime={async (eventId, update) => {
+              try {
+                await updateEvent(eventId, update, true);
+                refetch();
+                return true;
+              } catch (err: any) {
+                const msg = err?.message || "";
+                if (msg.includes("conflict") || msg.includes("Conflict")) {
+                  throw new Error("⚠ Time still conflicts with another event. Choose a different time.");
+                }
+                throw err;
+              }
+            }}
           />
 
           {/* ===== EMAIL SETTINGS OVERLAY ===== */}

@@ -21,14 +21,33 @@ interface PersonaSettingsProps {
   isModal?: boolean;
 }
 
-// Default user ID (in real app, get from auth context)
-const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
+function getSessionUserId(): string | null {
+  try {
+    const sessionItem = localStorage.getItem("scheduler_auth_session");
+    if (sessionItem) {
+      const sessionData = JSON.parse(sessionItem);
+      return sessionData.user_id || null;
+    }
+  } catch (e) {
+    console.error("Error reading session", e);
+  }
+  return null;
+}
 
 export default function PersonaSettings({ 
-  userId = DEFAULT_USER_ID, 
+  userId, 
   onClose,
   isModal = false 
 }: PersonaSettingsProps) {
+  const resolvedUserId = userId || getSessionUserId();
+
+  if (!resolvedUserId) {
+    return (
+      <div className="d-flex align-items-center justify-content-center p-5">
+        <p className="text-muted">Please log in to manage your persona.</p>
+      </div>
+    );
+  }
   const [profile, setProfile] = useState<UserProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -46,7 +65,7 @@ export default function PersonaSettings({
   useEffect(() => {
     const loadProfile = async () => {
       try {
-        const data = await getUserProfile(userId);
+        const data = await getUserProfile(resolvedUserId);
         setProfile(data);
         setUserStory(data.user_story || "");
         setEditedPriorities(data.merged_priorities || {});
@@ -59,7 +78,7 @@ export default function PersonaSettings({
       }
     };
     loadProfile();
-  }, [userId]);
+  }, [resolvedUserId]);
 
   const handleSaveStory = useCallback(async () => {
     if (!userStory.trim() || userStory.length < 10) {
@@ -72,7 +91,7 @@ export default function PersonaSettings({
     setExtraction(null);
 
     try {
-      const response = await saveUserStory(userId, {
+      const response = await saveUserStory(resolvedUserId, {
         user_story: userStory,
         extract_priorities: true,
       });
@@ -89,14 +108,14 @@ export default function PersonaSettings({
     } finally {
       setSaving(false);
     }
-  }, [userStory, userId]);
+  }, [userStory, resolvedUserId]);
 
   const handleSavePriorities = useCallback(async () => {
     setSaving(true);
     setError(null);
 
     try {
-      const response = await updatePriorities(userId, {
+      const response = await updatePriorities(resolvedUserId, {
         priorities: editedPriorities,
         strategy: selectedStrategy,
       });
@@ -108,14 +127,14 @@ export default function PersonaSettings({
     } finally {
       setSaving(false);
     }
-  }, [editedPriorities, selectedStrategy, userId]);
+  }, [editedPriorities, selectedStrategy, resolvedUserId]);
 
   const handleStrategyChange = useCallback(async (strategy: string) => {
     setSelectedStrategy(strategy);
     
     if (profile) {
       try {
-        const response = await updateStrategy(userId, {
+        const response = await updateStrategy(resolvedUserId, {
           strategy: strategy as "minimize_moves" | "maximize_quality" | "balanced",
         });
         setProfile(response);
@@ -123,7 +142,7 @@ export default function PersonaSettings({
         console.error("Failed to update strategy:", err);
       }
     }
-  }, [profile, userId]);
+  }, [profile, resolvedUserId]);
 
   const handlePriorityChange = (eventType: string, value: number) => {
     setEditedPriorities(prev => ({

@@ -11,6 +11,23 @@ export default function ChatPage() {
   const [healthLoading, setHealthLoading] = useState(true);
   const [showPersonaModal, setShowPersonaModal] = useState(false);
 
+  // Read user ID from localStorage session
+  const [userId, setUserId] = useState<string | undefined>(undefined);
+  const [calendarId, setCalendarId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    try {
+      const sessionItem = localStorage.getItem("scheduler_auth_session");
+      if (sessionItem) {
+        const sessionData = JSON.parse(sessionItem);
+        if (sessionData.user_id) setUserId(sessionData.user_id);
+        if (sessionData.calendar_id) setCalendarId(sessionData.calendar_id);
+      }
+    } catch (e) {
+      console.error("Error reading session", e);
+    }
+  }, []);
+
   // Check health on mount
   useEffect(() => {
     const checkHealth = async () => {
@@ -139,7 +156,7 @@ export default function ChatPage() {
 
         {/* Chat container */}
         <div style={{ height: "calc(100vh - 380px)", minHeight: "550px" }} className="mb-5 shadow-sm rounded-4 overflow-hidden border">
-          <ChatContainer />
+          <ChatContainer calendarId={calendarId} userId={userId} />
         </div>
 
         {/* Tips section */}

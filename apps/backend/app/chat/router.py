@@ -48,7 +48,7 @@ async def process_message(
     
     The response may include choice buttons for user interaction.
     """
-    service = ChatAgentService(db, request.timezone)
+    service = ChatAgentService(db, request.timezone, user_id=request.user_id)
     return await service.process_message(request)
 
 

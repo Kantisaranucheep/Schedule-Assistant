@@ -2,7 +2,8 @@
 
 import uuid
 from datetime import datetime
-from sqlalchemy import ForeignKey, String, DateTime
+from typing import Optional
+from sqlalchemy import ForeignKey, String, DateTime, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import BaseModel
@@ -21,5 +22,6 @@ class EventCollaborationInvitation(BaseModel):
     event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("events.id", ondelete="CASCADE"), index=True)
     inviter_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True)
     invitee_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending, accepted, declined
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending, accepted, declined, conflict_reported
     responded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    conflict_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # message when conflict is reported

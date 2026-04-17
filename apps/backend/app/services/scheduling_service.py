@@ -376,14 +376,17 @@ class ScheduleOptimizer:
         new_start, slot_cost = result
         new_end = new_start + new_event.duration
 
+        # Priority penalty: higher priority events cost more to move (quadratic scaling)
+        priority_penalty = (new_event.priority ** 2) * 0.15
+
         # Strategy adjustment
         strategy_factor = {
             "minimize_moves": 0.7,   # Favor this (fewer total moves)
-            "maximize_quality": 1.5 if new_event.priority >= 8 else 0.5,
+            "maximize_quality": 1.8 if new_event.priority >= 8 else 0.5,
             "balanced": 1.0,
         }.get(self.strategy, 1.0)
 
-        total_cost = (slot_cost + new_event.priority * 0.5) * strategy_factor
+        total_cost = (slot_cost + priority_penalty) * strategy_factor
 
         move = MoveAction(
             event_id=new_event.id, event_title=new_event.title,
@@ -434,7 +437,9 @@ class ScheduleOptimizer:
                        f"'{new_event.title}' (priority {new_event.priority})",
             )
             moves.append(move)
-            total_cost += slot_cost + event.priority * 0.3
+            # Priority penalty: higher priority events cost more to move (quadratic scaling)
+            priority_penalty = (event.priority ** 2) * 0.15
+            total_cost += slot_cost + priority_penalty
 
             # Update the "all_with_new" list with the moved event
             moved_event = event.copy_to(new_start)
@@ -443,10 +448,11 @@ class ScheduleOptimizer:
         if failed:
             return None
 
-        # Strategy adjustment
+        # Strategy adjustment — consider priorities of events being moved
+        max_moved_priority = max((m.priority for m in moves), default=0)
         strategy_factor = {
             "minimize_moves": 1.3,   # Penalize multiple moves
-            "maximize_quality": 0.5 if new_event.priority >= 8 else 1.5,
+            "maximize_quality": 0.4 if max_moved_priority <= 5 else 1.8,  # Penalize moving high-priority events
             "balanced": 1.0,
         }.get(self.strategy, 1.0)
 

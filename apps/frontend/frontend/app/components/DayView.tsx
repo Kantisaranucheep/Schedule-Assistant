@@ -169,29 +169,34 @@ export default function DayView({
                     const allPortions = timedEvents.flatMap(splitEventByHours);
                     const rowPortions = allPortions.filter((p) => p.hour === h);
 
-                    // Vertical stacking within row if minutes overlap
-                    const stacks: EventPortion[][] = [];
-                    rowPortions
-                        .sort((a, b) => a.start - b.start)
-                        .forEach((p) => {
-                            let placed = false;
-                            for (const s of stacks) {
-                                const last = s[s.length - 1];
-                                if (p.start < last.end) {
-                                    s.push(p);
-                                    placed = true;
-                                    break;
-                                }
+                    // Overlapping events stacking: compute overlap groups
+                    const overlapGroups: EventPortion[][] = [];
+                    const sorted = [...rowPortions].sort((a, b) => a.start - b.start);
+                    for (const p of sorted) {
+                        let placed = false;
+                        for (const g of overlapGroups) {
+                            if (g.some(existing => p.start < existing.end && p.end > existing.start)) {
+                                g.push(p);
+                                placed = true;
+                                break;
                             }
-                            if (!placed) stacks.push([p]);
-                        });
+                        }
+                        if (!placed) overlapGroups.push([p]);
+                    }
+                    // Flatten: for each portion, find its group index and group size
+                    const portionMeta = new Map<EventPortion, { idx: number; total: number }>();
+                    for (const g of overlapGroups) {
+                        g.forEach((p, i) => portionMeta.set(p, { idx: i, total: g.length }));
+                    }
+                    const maxOverlap = overlapGroups.reduce((max, g) => Math.max(max, g.length), 1);
+                    const rowHeight = Math.max(50, maxOverlap * 32);
 
                     return (
                         <div
                             key={h}
                             className="d-flex border-bottom border-light flex-grow-1 row-hover-bg transition-colors"
                             style={{
-                                minHeight: 50,
+                                minHeight: rowHeight,
                                 borderBottomStyle: "solid",
                                 borderBottomWidth: 1,
                                 borderColor: "#f5f5f5",
@@ -234,12 +239,10 @@ export default function DayView({
                                     const left = (p.start / 60) * 100;
                                     const width = Math.max(1, ((p.end - p.start) / 60) * 100);
 
-                                    // Vertical stacking offset
-                                    const stack = stacks.find((s) => s.includes(p));
-                                    const stackIdx = stack ? stack.indexOf(p) : 0;
-                                    const stackDepth = stack ? stack.length : 1;
-                                    const hPct = 100 / stackDepth;
-                                    const topPct = stackIdx * hPct;
+                                    // Vertical stacking offset for overlapping events
+                                    const meta = portionMeta.get(p) || { idx: 0, total: 1 };
+                                    const hPct = 100 / meta.total;
+                                    const topPct = meta.idx * hPct;
 
                                     return (
                                         <div
