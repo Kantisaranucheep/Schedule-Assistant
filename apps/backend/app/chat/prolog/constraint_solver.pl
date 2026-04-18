@@ -1,3 +1,28 @@
+%% ============================================================================
+%% META-INTERPRETER FOR KRR DEMONSTRATION
+%% ============================================================================
+
+%% rule(Head, Body): Knowledge rules for reasoning
+rule(conflict(Event1, Event2), (overlaps(Event1, Event2))).
+rule(overlaps(event(_,_,SH1,SM1,EH1,EM1,_), event(_,_,SH2,SM2,EH2,EM2,_)),
+    (time_to_minutes(SH1,SM1,S1), time_to_minutes(EH1,EM1,E1),
+     time_to_minutes(SH2,SM2,S2), time_to_minutes(EH2,EM2,E2),
+     S1 < E2, S2 < E1)).
+rule(priority_loss(Priority, Weight, Loss), (Loss is Priority * Priority * Weight)).
+
+%% Meta-interpreter: solve/1
+solve(true) :- !.
+solve((A,B)) :- !, solve(A), solve(B).
+solve(Goal) :-
+    rule(Goal, Body),
+    solve(Body).
+solve(Goal) :-
+    % Fallback to built-in predicates (arithmetic, etc.)
+    call(Goal).
+
+%% Example usage:
+%% ?- solve(conflict(E1, E2)).
+%% ?- solve(priority_loss(5, 2.0, Loss)).
 %% apps/backend/app/chat/prolog/constraint_solver.pl
 %% ============================================================================
 %% Enhanced Constraint Solver with Priority-Based A* Rescheduling
@@ -37,46 +62,40 @@
 %% HARD CONSTRAINTS — Must be satisfied, no exceptions
 %% ============================================================================
 
-%% validate_hard_constraints(+Event, +AllEvents, -Violations)
-%% Returns a list of hard constraint violations. Empty list = valid.
-%%
-%% Hard constraints:
-%%   1. No time overlap with other events
-%%   2. Within working hours (default 6:00-23:00)
-%%   3. End time must be after start time
-%%   4. Event duration must be positive
-validate_hard_constraints(
-    event(Id, _Title, StartH, StartM, EndH, EndM, _Priority, _Type),
-    AllEvents,
-    Violations
-) :-
-    time_to_minutes(StartH, StartM, StartMin),
-    time_to_minutes(EndH, EndM, EndMin),
-    findall(Violation, (
-        % Check 1: Time overlap with other events
-        (   member(event(OtherId, OtherTitle, OSH, OSM, OEH, OEM, _, _), AllEvents),
-            OtherId \= Id,
-            time_to_minutes(OSH, OSM, OStart),
-            time_to_minutes(OEH, OEM, OEnd),
-            OStart < EndMin,
-            StartMin < OEnd,
-            Violation = overlap(OtherId, OtherTitle)
-        )
-        ;
-        % Check 2: Outside working hours
-        (   StartMin < 360,  % Before 6:00 AM
-            Violation = before_working_hours
-        )
-        ;
-        (   EndMin > 1380,   % After 23:00
-            Violation = after_working_hours
-        )
-        ;
-        % Check 3: Invalid duration
-        (   EndMin =< StartMin,
-            Violation = invalid_duration
-        )
-    ), Violations).
+
+%% --- KRR: Hard constraint rules ---
+% No time overlap with other events
+rule(hard_violation(Event, AllEvents, overlap(OtherId, OtherTitle)),
+    ( member(event(OtherId, OtherTitle, OSH, OSM, OEH, OEM, _, _), AllEvents),
+      event_id(Event, Id),
+      OtherId \= Id,
+      event_time(Event, StartMin, EndMin),
+      time_to_minutes(OSH, OSM, OStart),
+      time_to_minutes(OEH, OEM, OEnd),
+      OStart < EndMin, StartMin < OEnd )).
+
+% Before working hours
+rule(hard_violation(Event, _, before_working_hours),
+    ( event_time(Event, StartMin, _), StartMin < 360 )).
+
+% After working hours
+rule(hard_violation(Event, _, after_working_hours),
+    ( event_time(Event, _, EndMin), EndMin > 1380 )).
+
+% Invalid duration
+rule(hard_violation(Event, _, invalid_duration),
+    ( event_time(Event, StartMin, EndMin), EndMin =< StartMin )).
+
+% Helper to extract event id
+event_id(event(Id, _, _, _, _, _, _, _), Id).
+% Helper to extract event start/end in minutes
+event_time(event(_, _, SH, SM, EH, EM, _, _), StartMin, EndMin) :-
+    time_to_minutes(SH, SM, StartMin),
+    time_to_minutes(EH, EM, EndMin).
+
+%% KRR-driven validate_hard_constraints/3 using meta-interpreter
+validate_hard_constraints(Event, AllEvents, Violations) :-
+    findall(Violation, solve(hard_violation(Event, AllEvents, Violation)), Violations).
 
 %% ============================================================================
 %% SOFT CONSTRAINTS — Preferences with penalty costs
