@@ -15,6 +15,10 @@ from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Event, Calendar, UserProfile, EventCollaborator
+from app.services.scheduling_service import SchedulingService as _SchedulingService
+
+# Shared instance for type/priority inference (stateless helper methods only)
+_svc = _SchedulingService()
 
 
 # Default user and calendar IDs (hardcoded for simplicity)
@@ -427,7 +431,12 @@ class EventRepository:
         """Convert Event model to dictionary format for Prolog/chat."""
         local_start = event.start_time.astimezone(self.tz)
         local_end = event.end_time.astimezone(self.tz)
-        
+
+        # Infer event type and priority from the title so that the constraint
+        # solver can use them even when no priority_map is available.
+        event_type = _svc._infer_event_type(event.title or "")
+        priority = _svc.default_priorities.get(event_type, 5)
+
         return {
             "id": str(event.id),
             "title": event.title,
@@ -441,4 +450,6 @@ class EventRepository:
             "location": event.location,
             "notes": event.notes,
             "status": event.status,
+            "event_type": event_type,
+            "priority": priority,
         }

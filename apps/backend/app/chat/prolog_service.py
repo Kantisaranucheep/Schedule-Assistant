@@ -964,16 +964,12 @@ class PrologService:
                 return base_cost * 0.7  # Favor moving just the new event
             return base_cost * 1.3
         elif strategy == "maximize_quality":
-            # Priority is 1-10. High-priority events should be very costly to move.
-            # Low-priority events (1-3) get cost reduction; high-priority (8-10) get steep penalty.
+            # Use a single continuous priority scale regardless of new/existing.
+            # This guarantees a lower-priority event is always cheaper to move than
+            # a higher-priority one — the is_new_event distinction caused lower-priority
+            # existing events to be scored as more expensive than higher-priority new events.
             priority_factor = priority / 10.0  # 0.1 – 1.0
-            if is_new_event:
-                # High-priority new event: expensive to move away from preferred time
-                # Low-priority new event: cheap to relocate
-                return base_cost * (0.3 + priority_factor * 1.7)  # 0.3 (low-pri) to 2.0 (high-pri)
-            else:
-                # Existing event: high-priority = very expensive to move, low-priority = cheap
-                return base_cost * (0.3 + priority_factor * 2.7)  # 0.3 (low-pri) to 3.0 (high-pri)
+            return base_cost * (0.3 + priority_factor * 1.7)  # 0.47 (p=1) to 2.0 (p=10)
         elif strategy == "balanced":
             # Mild priority bias + mild move-count bias
             priority_factor = priority / 10.0
@@ -983,6 +979,33 @@ class PrologService:
                 return base_cost * (0.8 + priority_factor * 0.7)  # 0.8 – 1.5
         return base_cost
     
+    # Keywords used to infer event type from title (Thai + English).
+    # Must match the keyword list in SchedulingService._infer_event_type.
+    _TYPE_KEYWORDS: Dict[str, List[str]] = {
+        "exam":        ["exam", "test", "quiz", "midterm", "final", "สอบ"],
+        "meeting":     ["meeting", "meet", "standup", "sync", "ประชุม", "daily scrum"],
+        "study":       ["study", "homework", "assignment", "research", "review", "อ่านหนังสือ"],
+        "class":       ["class", "lecture", "lab", "tutorial", "เรียน"],
+        "deadline":    ["deadline", "due", "submit", "ส่งงาน"],
+        "exercise":    ["exercise", "gym", "run", "sport", "yoga", "workout", "ออกกำลังกาย",
+                        "football", "basketball", "swim", "cycling", "hiking", "volleyball",
+                        "tennis", "badminton", "boxing", "martial arts", "dance"],
+        "party":       ["party", "celebration", "ปาร์ตี้"],
+        "social":      ["lunch", "dinner", "hangout", "coffee", "social", "เจอเพื่อน"],
+        "work":        ["work", "shift", "office", "ทำงาน"],
+        "appointment": ["doctor", "dentist", "appointment", "นัดหมาย"],
+        "travel":      ["travel", "trip", "flight", "เดินทาง"],
+        "personal":    ["personal", "errands", "ธุระ"],
+    }
+
+    def _infer_event_type(self, title: str) -> str:
+        """Infer event type from title using the shared keyword map."""
+        text = title.lower()
+        for event_type, keywords in self._TYPE_KEYWORDS.items():
+            if any(kw in text for kw in keywords):
+                return event_type
+        return "other"
+
     def _resolve_priority(
         self,
         title: str,
@@ -990,21 +1013,17 @@ class PrologService:
         priority_map: Optional[Dict[str, int]],
     ) -> int:
         """Resolve event priority using persona's priority_map.
-        
-        Matches the event title against known event-type keywords
-        in the user's priority_map. Falls back to explicit_priority or 5.
+
+        1. Infer the event type from the title using the full keyword map
+           (handles Thai keywords, compound names, etc.).
+        2. Look up that type in the user's priority_map.
+        3. Fall back to explicit_priority (from the event dict), then 5.
         """
         if priority_map:
-            title_lower = title.lower()
-            best_match_priority = None
-            # Check each keyword in the priority_map against the event title
-            for event_type, weight in priority_map.items():
-                if event_type.lower() in title_lower:
-                    if best_match_priority is None or weight > best_match_priority:
-                        best_match_priority = weight
-            if best_match_priority is not None:
-                return best_match_priority
-        
+            event_type = self._infer_event_type(title)
+            if event_type in priority_map:
+                return priority_map[event_type]
+
         if explicit_priority is not None:
             return explicit_priority
         return 5

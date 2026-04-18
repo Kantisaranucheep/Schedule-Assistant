@@ -403,11 +403,19 @@ class ScheduleOptimizer:
         priority_penalty = (new_event.priority ** 2) * 0.15
 
         # Strategy adjustment
-        strategy_factor = {
-            "minimize_moves": 0.7,   # Favor this (fewer total moves)
-            "maximize_quality": 1.8 if new_event.priority >= 8 else 0.5,
-            "balanced": 1.0,
-        }.get(self.strategy, 1.0)
+        # maximize_quality uses a continuous priority scale so that a higher-priority
+        # event always costs more to move than a lower-priority one, regardless of
+        # whether it is the "new" event or an "existing" event.
+        if self.strategy == "minimize_moves":
+            strategy_factor = 0.7   # Favor this (fewer total moves)
+        elif self.strategy == "maximize_quality":
+            priority_factor = new_event.priority / 10.0  # 0.1 – 1.0
+            strategy_factor = 0.3 + priority_factor * 1.7  # 0.47 (p=1) → 2.0 (p=10)
+        elif self.strategy == "balanced":
+            priority_factor = new_event.priority / 10.0
+            strategy_factor = 0.7 + priority_factor * 0.5  # 0.77 (p=1) → 1.2 (p=10)
+        else:
+            strategy_factor = 1.0
 
         total_cost = (slot_cost + priority_penalty) * strategy_factor
 
@@ -471,13 +479,20 @@ class ScheduleOptimizer:
         if failed:
             return None
 
-        # Strategy adjustment — consider priorities of events being moved
+        # Strategy adjustment — consider priorities of events being moved.
+        # maximize_quality uses the same continuous scale as _option_move_new so that
+        # a lower-priority existing event is always cheaper to move than a higher-priority one.
         max_moved_priority = max((m.priority for m in moves), default=0)
-        strategy_factor = {
-            "minimize_moves": 1.3,   # Penalize multiple moves
-            "maximize_quality": 0.4 if max_moved_priority <= 5 else 1.8,  # Penalize moving high-priority events
-            "balanced": 1.0,
-        }.get(self.strategy, 1.0)
+        if self.strategy == "minimize_moves":
+            strategy_factor = 1.3   # Penalize multiple moves
+        elif self.strategy == "maximize_quality":
+            priority_factor = max_moved_priority / 10.0  # 0.1 – 1.0
+            strategy_factor = 0.3 + priority_factor * 1.7  # 0.47 (p=1) → 2.0 (p=10)
+        elif self.strategy == "balanced":
+            priority_factor = max_moved_priority / 10.0
+            strategy_factor = 0.8 + priority_factor * 0.7  # 0.87 (p=1) → 1.5 (p=10)
+        else:
+            strategy_factor = 1.0
 
         total_cost *= strategy_factor
 

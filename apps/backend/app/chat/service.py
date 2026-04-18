@@ -1501,13 +1501,17 @@ class ChatAgentService:
         
         # Use balanced strategy by default
         strategy = context.reschedule_strategy or RescheduleStrategy.BALANCED
-        
+
+        # Fetch the user's persona priority map so the solver uses personal weights
+        priority_map = await self.repo.get_user_priority_map()
+
         # Call the constraint solver
         prolog = get_prolog_service()
         options = prolog.suggest_reschedule_options(
             new_event=new_event,
             existing_events=existing_events,
             strategy=strategy.value,
+            priority_map=priority_map,
         )
         
         if not options:
