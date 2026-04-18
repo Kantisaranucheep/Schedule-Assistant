@@ -185,9 +185,6 @@ class PrologService:
         """
         # If Prolog is not available, use Python fallback
         if not self._ensure_initialized():
-            print(f"[Prolog] Engine unavailable — using Python fallback for conflict check "
-                  f"({new_start_hour:02d}:{new_start_minute:02d}–{new_end_hour:02d}:{new_end_minute:02d}, "
-                  f"{len(existing_events)} existing events)")
             return self._check_conflict_python(
                 new_start_hour, new_start_minute,
                 new_end_hour, new_end_minute,
@@ -195,9 +192,6 @@ class PrologService:
             )
         
         try:
-            print(f"[Prolog] Calling Prolog engine for conflict check "
-                  f"({new_start_hour:02d}:{new_start_minute:02d}–{new_end_hour:02d}:{new_end_minute:02d}, "
-                  f"{len(existing_events)} existing events)")
             # Build Prolog event list
             events_str = self._build_events_list(existing_events)
             
@@ -207,7 +201,6 @@ class PrologService:
             results = list(self._prolog.query(query))
             
             if not results:
-                print(f"[Prolog] Result: no conflict found (query returned empty)")
                 return ConflictResult(has_conflict=False, conflicts=[])
             
             conflicts = results[0].get("Conflicts", [])
@@ -227,14 +220,13 @@ class PrologService:
                         "end_minute": int(args[5]),
                     })
             
-            print(f"[Prolog] Result: {'CONFLICT with ' + str(len(parsed_conflicts)) + ' event(s)' if parsed_conflicts else 'no conflict'}")
             return ConflictResult(
                 has_conflict=len(parsed_conflicts) > 0,
                 conflicts=parsed_conflicts
             )
             
         except Exception as e:
-            print(f"[Prolog] Query failed: {e} — falling back to Python")
+            print(f"Prolog query failed: {e}")
             # Fallback to Python implementation
             return self._check_conflict_python(
                 new_start_hour, new_start_minute,
@@ -581,103 +573,6 @@ class PrologService:
         
         return free_days
     
-    def validate_hard_constraints(
-        self,
-        event: Dict[str, Any],
-        all_events: List[Dict[str, Any]],
-        priority_map: Optional[Dict[str, int]] = None,
-    ) -> List[str]:
-        """Validate hard scheduling constraints using the Prolog constraint solver.
-        
-        Uses the meta-interpreter to check overlap, working hours, and duration.
-        Returns a list of violation descriptions. Empty list = valid.
-        """
-        if not self._ensure_initialized() or not self._constraint_solver_loaded:
-            return self._validate_hard_constraints_python(event, all_events)
-        
-        try:
-            event_id = str(event.get("id", "new")).replace('"', '\\"')
-            title = str(event.get("title", "")).replace('"', '\\"')
-            priority = self._resolve_priority(title, event.get("priority"), priority_map)
-            event_type = self._infer_event_type(title)
-            event_str = (
-                f'event("{event_id}", "{title}", '
-                f'{event["start_hour"]}, {event.get("start_minute", 0)}, '
-                f'{event["end_hour"]}, {event.get("end_minute", 0)}, '
-                f'{priority}, {event_type})'
-            )
-            
-            events_str = self._build_constraint_events_list(all_events, priority_map)
-            
-            query = f"validate_hard_constraints({event_str}, {events_str}, Violations)"
-            results = list(self._prolog.query(query))
-            
-            if not results:
-                return []
-            
-            violations_raw = results[0].get("Violations", [])
-            return [str(v) for v in violations_raw]
-            
-        except Exception as e:
-            print(f"Prolog validate_hard_constraints failed: {e}")
-            return self._validate_hard_constraints_python(event, all_events)
-    
-    def _validate_hard_constraints_python(
-        self,
-        event: Dict[str, Any],
-        all_events: List[Dict[str, Any]],
-    ) -> List[str]:
-        """Python fallback for hard constraint validation."""
-        violations = []
-        start = event["start_hour"] * 60 + event.get("start_minute", 0)
-        end = event["end_hour"] * 60 + event.get("end_minute", 0)
-        
-        if end <= start:
-            violations.append("invalid_duration")
-        if start < 360:   # 06:00
-            violations.append("before_working_hours")
-        if end > 1380:    # 23:00
-            violations.append("after_working_hours")
-        
-        for e in all_events:
-            if str(e.get("id", "")) == str(event.get("id", "")):
-                continue
-            e_start = e["start_hour"] * 60 + e.get("start_minute", 0)
-            e_end = e["end_hour"] * 60 + e.get("end_minute", 0)
-            if start < e_end and e_start < end:
-                violations.append(f"overlap({e.get('id', 'unknown')}, {e.get('title', '')})")
-        
-        return violations
-    
-    def solve_with_trace(self, goal: str) -> Optional[List[str]]:
-        """Solve a goal using the meta-interpreter and return the reasoning trace.
-        
-        Exposes the scheduler's solve_with_trace/2 to Python, showing which
-        rules were applied and which computations were performed.
-        
-        Example:
-            trace = prolog.solve_with_trace(
-                "intervals_overlap(interval(540, 600), interval(570, 630))"
-            )
-            # Returns: ["applied_rule(...)", "computed(starts_before(540,630))", ...]
-        """
-        if not self._ensure_initialized():
-            return None
-        
-        try:
-            query = f"solve_with_trace({goal}, Trace)"
-            results = list(self._prolog.query(query))
-            
-            if not results:
-                return None
-            
-            trace_raw = results[0].get("Trace", [])
-            return [str(t) for t in trace_raw]
-            
-        except Exception as e:
-            print(f"Prolog solve_with_trace failed: {e}")
-            return None
-    
     def _build_events_list(self, events: List[Dict[str, Any]]) -> str:
         """Build a Prolog list of events."""
         if not events:
@@ -693,42 +588,6 @@ class PrologService:
         
         return "[" + ", ".join(event_strs) + "]"
     
-    def _build_constraint_events_list(
-        self,
-        events: List[Dict[str, Any]],
-        priority_map: Optional[Dict[str, int]] = None,
-    ) -> str:
-        """Build a Prolog list of 8-field events for the constraint solver.
-        
-        Format: event(ID, Title, StartH, StartM, EndH, EndM, Priority, Type)
-        The Type is an unquoted Prolog atom to match constraint_solver domain facts.
-        """
-        if not events:
-            return "[]"
-        
-        event_strs = []
-        for e in events:
-            event_id = str(e.get("id", "unknown")).replace('"', '\\"')
-            title = str(e.get("title", "")).replace('"', '\\"')
-            priority = self._resolve_priority(title, e.get("priority"), priority_map)
-            event_type = self._infer_event_type(title)
-            event_str = (
-                f'event("{event_id}", "{title}", '
-                f'{e["start_hour"]}, {e["start_minute"]}, '
-                f'{e["end_hour"]}, {e["end_minute"]}, '
-                f'{priority}, {event_type})'
-            )
-            event_strs.append(event_str)
-        
-        return "[" + ", ".join(event_strs) + "]"
-    
-    def _find_event_title(self, event_id: str, events: List[Dict[str, Any]]) -> str:
-        """Find event title by ID from an event list."""
-        for e in events:
-            if str(e.get("id", "")) == event_id:
-                return e.get("title", "Event")
-        return "Event"
-    
     # =========================================================================
     # Python Fallback Implementations
     # =========================================================================
@@ -743,9 +602,6 @@ class PrologService:
         existing_events: List[Dict[str, Any]]
     ) -> ConflictResult:
         """Python fallback for conflict checking."""
-        print(f"[Prolog] Python fallback: checking conflict "
-              f"({new_start_hour:02d}:{new_start_minute:02d}–{new_end_hour:02d}:{new_end_minute:02d}) "
-              f"against {len(existing_events)} event(s)")
         new_start = new_start_hour * 60 + new_start_minute
         new_end = new_end_hour * 60 + new_end_minute
         
@@ -765,7 +621,6 @@ class PrologService:
                     "end_minute": event["end_minute"],
                 })
         
-        print(f"[Prolog] Python fallback result: {'CONFLICT with ' + str(len(conflicts)) + ' event(s)' if conflicts else 'no conflict'}")
         return ConflictResult(
             has_conflict=len(conflicts) > 0,
             conflicts=conflicts
@@ -907,10 +762,6 @@ class PrologService:
         """
         Use the Phase 2 constraint solver to suggest up to 3 reschedule options.
         
-        Tries the Prolog constraint solver first (uses meta-interpreter for
-        overlap detection, domain knowledge for scoring). Falls back to
-        Python implementation if Prolog is unavailable.
-        
         Args:
             new_event: Dict with id, title, start_hour, start_minute, end_hour, end_minute
             existing_events: List of existing event dicts on the same day
@@ -922,143 +773,11 @@ class PrologService:
         Returns:
             List of RescheduleOption sorted by cost (best first)
         """
-        # Try Prolog constraint solver first
-        if self._ensure_initialized() and self._constraint_solver_loaded:
-            try:
-                result = self._suggest_reschedule_prolog(
-                    new_event, existing_events, strategy,
-                    min_hour, min_minute, max_hour, max_minute,
-                    priority_map=priority_map,
-                )
-                if result:
-                    return result
-            except Exception as e:
-                print(f"Prolog constraint solver failed, using Python fallback: {e}")
-        
         return self._suggest_reschedule_python(
             new_event, existing_events, strategy,
             min_hour, min_minute, max_hour, max_minute,
             priority_map=priority_map,
         )
-    
-    def _suggest_reschedule_prolog(
-        self,
-        new_event: Dict[str, Any],
-        existing_events: List[Dict[str, Any]],
-        strategy: str,
-        min_hour: int,
-        min_minute: int,
-        max_hour: int,
-        max_minute: int,
-        priority_map: Optional[Dict[str, int]] = None,
-    ) -> Optional[List[RescheduleOption]]:
-        """Call Prolog constraint solver for reschedule suggestions.
-        
-        Builds 8-field events with priority and type, calls the constraint
-        solver's suggest_reschedule_options/8, and parses the results into
-        RescheduleOption objects.
-        """
-        new_id = str(new_event.get("id", "new")).replace('"', '\\"')
-        new_title = str(new_event.get("title", "")).replace('"', '\\"')
-        new_priority = self._resolve_priority(
-            new_title, new_event.get("priority"), priority_map
-        )
-        new_type = self._infer_event_type(new_title)
-        new_event_str = (
-            f'event("{new_id}", "{new_title}", '
-            f'{new_event["start_hour"]}, {new_event.get("start_minute", 0)}, '
-            f'{new_event["end_hour"]}, {new_event.get("end_minute", 0)}, '
-            f'{new_priority}, {new_type})'
-        )
-        
-        events_str = self._build_constraint_events_list(
-            existing_events, priority_map
-        )
-        
-        # Strategy must be an unquoted Prolog atom
-        query = (
-            f"suggest_reschedule_options("
-            f"{new_event_str}, {events_str}, {strategy}, "
-            f"{min_hour}, {min_minute}, {max_hour}, {max_minute}, Options)"
-        )
-        
-        results = list(self._prolog.query(query))
-        if not results:
-            return None
-        
-        options_raw = results[0].get("Options", [])
-        if not options_raw:
-            return None
-        
-        options = []
-        for opt in options_raw:
-            if not hasattr(opt, 'args'):
-                continue
-            args = opt.args
-            action = str(args[0])
-            moved_list_raw = args[1] if len(args) > 1 else []
-            cost = float(args[2]) if len(args) > 2 else 0.0
-            description = str(args[3]) if len(args) > 3 else ""
-            
-            moves = self._parse_prolog_moves(
-                action, moved_list_raw, new_event, existing_events
-            )
-            
-            options.append(RescheduleOption(
-                action=action,
-                description=description,
-                cost=cost,
-                moves=moves,
-            ))
-        
-        return options if options else None
-    
-    def _parse_prolog_moves(
-        self,
-        action: str,
-        moved_list_raw,
-        new_event: Dict[str, Any],
-        existing_events: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
-        """Parse Prolog move terms into Python dicts.
-        
-        Handles two term shapes:
-        - moved_to(SH, SM, EH, EM)    — 4 args, new event moved
-        - moved(CId, CSH, CSM, CEH, CEM) — 5 args, existing event moved
-        """
-        moves = []
-        if not isinstance(moved_list_raw, (list, tuple)):
-            return moves
-        
-        for m in moved_list_raw:
-            if not hasattr(m, 'args'):
-                continue
-            margs = m.args
-            
-            if len(margs) == 4:
-                # moved_to(SH, SM, EH, EM) — new event is being moved
-                moves.append({
-                    "event_id": new_event.get("id", "new"),
-                    "title": new_event.get("title", "New event"),
-                    "new_start_hour": int(margs[0]),
-                    "new_start_minute": int(margs[1]),
-                    "new_end_hour": int(margs[2]),
-                    "new_end_minute": int(margs[3]),
-                })
-            elif len(margs) == 5:
-                # moved(CId, CSH, CSM, CEH, CEM) — existing event moved
-                event_id = str(margs[0])
-                title = self._find_event_title(event_id, existing_events)
-                moves.append({
-                    "event_id": event_id,
-                    "title": title,
-                    "new_start_hour": int(margs[1]),
-                    "new_start_minute": int(margs[2]),
-                    "new_end_hour": int(margs[3]),
-                    "new_end_minute": int(margs[4]),
-                })
-        
-        return moves
     
     def _suggest_reschedule_python(
         self,

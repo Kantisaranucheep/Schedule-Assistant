@@ -11,8 +11,6 @@ from app.core.timezone import now as tz_now
 from app.schemas.chat import ChatRequest, ChatResponse, IntentData, ActionResult, ChatSessionResponse, ChatMessageResponse
 from app.services import ChatService, EventService
 from app.agent import IntentParser, IntentExecutor, ParseRequest, ExecuteRequest, IntentType
-from app.chat.prolog_service import get_prolog_service
-from app.chat.event_repository import EventRepository
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -168,28 +166,12 @@ async def _handle_create_event(
         
         event_service = EventService(db)
         
-        # Use Prolog-based conflict checking (Knowledge Representation & Reasoning)
-        # The meta-interpreter resolves: rule → solve → compute for overlap detection
-        prolog = get_prolog_service()
-        repo = EventRepository(db, user_timezone)
-        existing_events = await repo.get_events_on_date(
-            start_dt.day, start_dt.month, start_dt.year,
-            calendar_id=calendar_id,
-        )
-        conflict_result = prolog.check_conflict(
-            start_dt.hour, start_dt.minute,
-            end_dt.hour, end_dt.minute,
-            existing_events,
-        )
-        if conflict_result.has_conflict:
-            c = conflict_result.conflicts[0]
+        # Check for conflicts
+        conflicts = await event_service.check_conflicts(calendar_id, start_dt, end_dt)
+        if conflicts:
             return ActionResult(
                 success=False,
-                message=(
-                    f"Conflict with existing event: {c['title']} "
-                    f"({c['start_hour']:02d}:{c['start_minute']:02d} - "
-                    f"{c['end_hour']:02d}:{c['end_minute']:02d})"
-                ),
+                message=f"Conflict with existing event: {conflicts[0].title}",
                 error="scheduling_conflict",
             )
         
@@ -320,29 +302,14 @@ async def _handle_move_event(
         new_start_dt = naive_start.replace(tzinfo=tz)
         new_end_dt = naive_end.replace(tzinfo=tz)
         
-        # Use Prolog-based conflict checking (Knowledge Representation & Reasoning)
-        prolog = get_prolog_service()
-        repo = EventRepository(db, user_timezone)
-        existing_events = await repo.get_events_on_date(
-            new_start_dt.day, new_start_dt.month, new_start_dt.year,
-            calendar_id=calendar_id,
+        # Check for conflicts
+        conflicts = await event_service.check_conflicts(
+            calendar_id, new_start_dt, new_end_dt, exclude_event_id=event.id
         )
-        # Exclude the event being moved from conflict candidates
-        existing_events = [e for e in existing_events if str(e.get("id")) != str(event.id)]
-        conflict_result = prolog.check_conflict(
-            new_start_dt.hour, new_start_dt.minute,
-            new_end_dt.hour, new_end_dt.minute,
-            existing_events,
-        )
-        if conflict_result.has_conflict:
-            c = conflict_result.conflicts[0]
+        if conflicts:
             return ActionResult(
                 success=False,
-                message=(
-                    f"Conflict with existing event: {c['title']} "
-                    f"({c['start_hour']:02d}:{c['start_minute']:02d} - "
-                    f"{c['end_hour']:02d}:{c['end_minute']:02d})"
-                ),
+                message=f"Conflict with existing event: {conflicts[0].title}",
                 error="scheduling_conflict",
             )
         
@@ -371,43 +338,28 @@ async def _handle_find_free_slots(
     user_id: uuid.UUID,
     data: dict,
 ) -> ActionResult:
-    """Handle find_free_slots intent using Prolog constraint solving."""
-    from datetime import datetime, timedelta
+    """Handle find_free_slots intent."""
+    from datetime import datetime
+    from app.services import AvailabilityService
     
     try:
-        prolog = get_prolog_service()
-        repo = EventRepository(db)
+        availability_service = AvailabilityService(db)
         
         # Parse date range
         date_range = data.get("date_range", {})
         start_date_str = date_range.get("start_date", tz_now().strftime("%Y-%m-%d"))
-        end_date_str = date_range.get("end_date", start_date_str)
+        end_date_str = date_range.get("end_date", tz_now().strftime("%Y-%m-%d"))
         
         start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
         end_date = datetime.strptime(end_date_str, "%Y-%m-%d")
         
         duration = data.get("duration_minutes", 60)
         
-        # Collect free slots across the date range using Prolog
-        all_slots = []
-        current = start_date
-        while current <= end_date and len(all_slots) < 5:
-            existing_events = await repo.get_events_on_date(
-                current.day, current.month, current.year,
-                calendar_id=calendar_id,
-            )
-            day_slots = prolog.find_free_slots_on_date(
-                day=current.day,
-                month=current.month,
-                year=current.year,
-                duration_minutes=duration,
-                existing_events=existing_events,
-                max_results=5 - len(all_slots),
-            )
-            all_slots.extend(day_slots)
-            current += timedelta(days=1)
+        slots = await availability_service.find_free_slots(
+            calendar_id, start_date, end_date, duration
+        )
         
-        if not all_slots:
+        if not slots:
             return ActionResult(
                 success=True,
                 message=f"No {duration}-minute free slots found between {start_date_str} and {end_date_str}",
@@ -416,16 +368,16 @@ async def _handle_find_free_slots(
         
         # Format slots for response
         formatted_slots = []
-        for slot in all_slots[:5]:
+        for slot in slots[:5]:  # Limit to 5 slots
             formatted_slots.append({
-                "start": f"{slot.year}-{slot.month:02d}-{slot.day:02d}T{slot.start_hour:02d}:{slot.start_minute:02d}",
-                "end": f"{slot.year}-{slot.month:02d}-{slot.day:02d}T{slot.end_hour:02d}:{slot.end_minute:02d}",
-                "duration_minutes": duration,
+                "start": slot["start"],
+                "end": slot["end"],
+                "duration_minutes": slot["duration_minutes"],
             })
         
         return ActionResult(
             success=True,
-            message=f"Found {len(all_slots)} free slots. Here are some options:",
+            message=f"Found {len(slots)} free slots. Here are some options:",
             events=formatted_slots,
         )
         
