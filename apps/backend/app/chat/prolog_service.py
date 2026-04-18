@@ -133,7 +133,7 @@ class PrologService:
         self._constraint_solver_file = os.path.join(
             os.path.dirname(__file__),
             "prolog",
-            "constraint_solver.pl"
+            "constraint_solver_krr.pl"
         )
     
     def _ensure_initialized(self) -> bool:

@@ -25,30 +25,42 @@ solve(Goal) :-
 %% ?- solve(priority_loss(5, 2.0, Loss)).
 %% apps/backend/app/chat/prolog/constraint_solver.pl
 %% ============================================================================
-%% Enhanced Constraint Solver with Priority-Based A* Rescheduling
+%% Meta-Interpreter Based Constraint Solver
+%% Knowledge Representation and Reasoning Approach
 %% ============================================================================
 %%
-%% Phase 2: Multi-constraint reasoning + heuristic cost + A* search
+%% This implements a meta-interpreter that performs logical reasoning about
+%% scheduling constraints, producing proof traces that explain WHY decisions
+%% are made through logical inference rather than mathematical computation.
 %%
-%% Concepts:
-%%   - Hard constraints: MUST be satisfied (time overlap, working hours)
-%%   - Soft constraints: SHOULD be satisfied (priority, preferences)
-%%   - g(n): Actual displacement cost (how much weve moved events)
-%%   - h(n): Priority loss heuristic (impact on high-priority events)
-%%   - A* search: Finds optimal rescheduling with f(n) = g(n) + h(n)
+%% Key KR&R Concepts:
+%%   - Meta-interpreter: prove/3 that builds proof trees
+%%   - Knowledge base: Declarative constraint rules
+%%   - Logical inference: Forward and backward chaining
+%%   - Explanation generation: Proof traces showing reasoning
+%%   - Constraint satisfaction: Logical derivation, not arithmetic
 %% ============================================================================
 
 :- module(constraint_solver, [
-    validate_hard_constraints/3,
-    calculate_soft_cost/4,
-    calculate_displacement_cost/3,
-    calculate_priority_loss/4,
-    calculate_heuristic/5,
-    find_best_slot/7,
-    reschedule_event/8,
-    find_optimal_schedule/6,
-    detect_chain_conflicts/4,
-    suggest_reschedule_options/7
+    % Meta-interpreter interface
+    prove/3,                    % prove(Goal, Knowledge, Proof)
+    prove_with_trace/4,         % prove_with_trace(Goal, KB, Trace, Result)
+    
+    % Logical constraint checking
+    satisfies_constraint/3,     % satisfies_constraint(Event, Constraint, Proof)
+    violates_constraint/3,      % violates_constraint(Event, Constraint, Proof)
+    
+    % Schedule validation through logical inference
+    valid_schedule/3,           % valid_schedule(Schedule, KB, Proof)
+    find_violations/3,          % find_violations(Schedule, KB, Violations)
+    
+    % Constraint-based reasoning
+    resolve_conflict/4,         % resolve_conflict(Conflict, KB, Action, Proof)
+    find_valid_slot/4,          % find_valid_slot(Event, KB, Slot, Proof)
+    
+    % Query interface
+    query_schedule/4,           % query_schedule(Query, Schedule, KB, Answer)
+    explain_decision/3          % explain_decision(Decision, Proof, Explanation)
 ]).
 
 :- use_module(scheduler, [
@@ -57,6 +69,313 @@ solve(Goal) :-
     events_overlap/4,
     slot_conflicts_with_events/3
 ]).
+
+%% ============================================================================
+%% KNOWLEDGE BASE: Declarative Constraint Rules
+%% ============================================================================
+%% These are logical facts and rules that define what makes a valid schedule.
+%% They are NOT procedures or calculations - they are knowledge.
+
+% Constraint type hierarchy (logical taxonomy)
+constraint_type(no_overlap, hard).
+constraint_type(within_working_hours, hard).
+constraint_type(positive_duration, hard).
+constraint_type(respects_priority, soft).
+constraint_type(respects_preferences, soft).
+constraint_type(adequate_buffer, soft).
+constraint_type(balanced_load, soft).
+
+% Working hours definition (knowledge fact)
+working_hours(6, 0, 23, 0).
+
+% Buffer time requirements (knowledge rule)
+requires_buffer(meeting, 15).
+requires_buffer(study, 10).
+requires_buffer(exercise, 5).
+requires_buffer(_, 5).  % default
+
+% Priority-based scheduling preferences (logical rules)
+priority_time_preference(Priority, StartHour, EndHour) :-
+    Priority >= 8,
+    StartHour >= 9,
+    EndHour =< 17.  % High priority → peak hours
+
+priority_time_preference(Priority, _, _) :-
+    Priority < 8.  % Low priority → flexible
+
+% Event type preferences (knowledge about event types)
+event_type_preference(meeting, 9, 0, 17, 0).
+event_type_preference(study, 8, 0, 18, 0).
+event_type_preference(exercise, 6, 0, 8, 0).
+event_type_preference(exercise, 17, 0, 21, 0).
+
+%% ============================================================================
+%% META-INTERPRETER: Core Reasoning Engine
+%% ============================================================================
+%% This is the heart of the KR&R approach - it performs logical inference
+%% and builds proof trees showing HOW conclusions are reached.
+
+%% prove(+Goal, +KnowledgeBase, -Proof)
+%% Meta-interpreter that proves goals through logical inference.
+%% Produces a proof tree showing the reasoning chain.
+
+% Base case: proven fact
+prove(true, _KB, proof(true, axiom)) :- !.
+
+% Conjunction: prove both goals
+prove((Goal1, Goal2), KB, proof(and(Goal1, Goal2), [Proof1, Proof2])) :-
+    !,
+    prove(Goal1, KB, Proof1),
+    prove(Goal2, KB, Proof2).
+
+% Disjunction: prove either goal
+prove((Goal1 ; Goal2), KB, proof(or(Goal1, Goal2), Proof)) :-
+    !,
+    (   prove(Goal1, KB, Proof1),
+        Proof = left(Proof1)
+    ;   prove(Goal2, KB, Proof2),
+        Proof = right(Proof2)
+    ).
+
+% Negation by failure (closed world assumption)
+prove(not(Goal), KB, proof(not(Goal), failed(SubProof))) :-
+    !,
+    (   prove(Goal, KB, SubProof)
+    ->  fail
+    ;   SubProof = none
+    ).
+
+% Query the knowledge base
+prove(constraint_type(Type, Category), _KB, proof(constraint_type(Type, Category), fact)) :-
+    constraint_type(Type, Category), !.
+
+prove(working_hours(SH, SM, EH, EM), _KB, proof(working_hours(SH, SM, EH, EM), fact)) :-
+    working_hours(SH, SM, EH, EM), !.
+
+% Logical inference for constraint satisfaction
+prove(satisfies(Event, Constraint), KB, proof(satisfies(Event, Constraint), SubProof)) :-
+    satisfies_constraint_logic(Event, Constraint, KB, SubProof), !.
+
+prove(violates(Event, Constraint), KB, proof(violates(Event, Constraint), SubProof)) :-
+    violates_constraint_logic(Event, Constraint, KB, SubProof), !.
+
+% Derived rules (logical implication)
+prove(valid_event(Event), KB, proof(valid_event(Event), SubProof)) :-
+    prove(forall_constraints(Event, satisfies), KB, SubProof), !.
+
+% Forall quantification
+prove(forall_constraints(Event, Relation), KB, 
+      proof(forall_constraints(Event, Relation), Proofs)) :-
+    findall(
+        proof(Relation(Event, C), P),
+        (
+            constraint_type(C, _),
+            (   Relation = satisfies
+            ->  prove(satisfies(Event, C), KB, P)
+            ;   prove(violates(Event, C), KB, P)
+            )
+        ),
+        Proofs
+    ), !.
+
+% Default: try to prove as a Prolog goal (with proof recording)
+prove(Goal, _KB, proof(Goal, prolog_derivation)) :-
+    call(Goal).
+
+%% prove_with_trace(+Goal, +KB, -Trace, -Result)
+%% Extended meta-interpreter that generates human-readable trace
+prove_with_trace(Goal, KB, Trace, Result) :-
+    prove(Goal, KB, Proof),
+    !,
+    Result = success,
+    proof_to_trace(Proof, Trace).
+prove_with_trace(Goal, _KB, trace([failed(Goal)]), failure).
+
+proof_to_trace(proof(Goal, axiom), [step(Goal, 'axiom (known fact)')]) :- !.
+proof_to_trace(proof(Goal, fact), [step(Goal, 'fact from knowledge base')]) :- !.
+proof_to_trace(proof(Goal, prolog_derivation), [step(Goal, 'derived by Prolog inference')]) :- !.
+proof_to_trace(proof(and(G1, G2), [P1, P2]), Trace) :-
+    !,
+    proof_to_trace(P1, T1),
+    proof_to_trace(P2, T2),
+    append([[step(and(G1, G2), 'proving conjunction')], T1, T2], Trace).
+proof_to_trace(proof(or(G1, G2), left(P)), Trace) :-
+    !,
+    proof_to_trace(P, T),
+    append([[step(or(G1, G2), 'proving left disjunct')], T], Trace).
+proof_to_trace(proof(or(G1, G2), right(P)), Trace) :-
+    !,
+    proof_to_trace(P, T),
+    append([[step(or(G1, G2), 'proving right disjunct')], T], Trace).
+proof_to_trace(proof(Goal, SubProof), Trace) :-
+    is_list(SubProof),
+    !,
+    maplist(proof_to_trace, SubProof, SubTraces),
+    append([[step(Goal, 'derived from')], SubTraces], Trace).
+proof_to_trace(proof(Goal, _), [step(Goal, 'proven')]).
+
+%% ============================================================================
+%% LOGICAL CONSTRAINT SATISFACTION
+%% ============================================================================
+%% Each constraint is represented as a logical predicate with inference rules.
+
+%% satisfies_constraint(+Event, +Constraint, -Proof)
+%% Proves that an event satisfies a constraint through logical inference
+satisfies_constraint(Event, Constraint, Proof) :-
+    prove(satisfies(Event, Constraint), [], Proof).
+
+%% violates_constraint(+Event, +Constraint, -Proof)
+%% Proves that an event violates a constraint
+violates_constraint(Event, Constraint, Proof) :-
+    prove(violates(Event, Constraint), [], Proof).
+
+%% satisfies_constraint_logic(+Event, +Constraint, +KB, -Proof)
+%% Logical rules defining when constraints are satisfied
+
+% NO OVERLAP constraint (logical definition)
+satisfies_constraint_logic(
+    event(Id, _, S1H, S1M, E1H, E1M, _, _),
+    no_overlap,
+    KB,
+    proof(no_overlap_with_all, AllProofs)
+) :-
+    member(kb(schedule(Events)), KB),
+    findall(
+        proof(no_overlap_with(Id2), SubProof),
+        (
+            member(event(Id2, _, S2H, S2M, E2H, E2M, _, _), Events),
+            Id \= Id2,
+            prove(events_do_not_overlap(
+                time(S1H, S1M, E1H, E1M),
+                time(S2H, S2M, E2H, E2M)
+            ), KB, SubProof)
+        ),
+        AllProofs
+    ).
+
+% WITHIN WORKING HOURS constraint (logical definition)
+satisfies_constraint_logic(
+    event(_, _, StartH, StartM, EndH, EndM, _, _),
+    within_working_hours,
+    _KB,
+    proof(within_hours, [StartProof, EndProof])
+) :-
+    working_hours(MinH, MinM, MaxH, MaxM),
+    time_to_minutes(StartH, StartM, StartMin),
+    time_to_minutes(EndH, EndM, EndMin),
+    time_to_minutes(MinH, MinM, MinMinutes),
+    time_to_minutes(MaxH, MaxM, MaxMinutes),
+    StartMin >= MinMinutes,
+    EndMin =< MaxMinutes,
+    StartProof = proof(start_after(MinH, MinM), logical_comparison),
+    EndProof = proof(end_before(MaxH, MaxM), logical_comparison).
+
+% POSITIVE DURATION constraint (logical definition)
+satisfies_constraint_logic(
+    event(_, _, StartH, StartM, EndH, EndM, _, _),
+    positive_duration,
+    _KB,
+    proof(positive_duration, derived)
+) :-
+    time_to_minutes(StartH, StartM, StartMin),
+    time_to_minutes(EndH, EndM, EndMin),
+    EndMin > StartMin.
+
+% RESPECTS PRIORITY constraint (logical inference)
+satisfies_constraint_logic(
+    event(_, _, StartH, _, _, _, Priority, _),
+    respects_priority,
+    _KB,
+    proof(priority_satisfied, PreferenceProof)
+) :-
+    prove(priority_time_preference(Priority, PreferredStart, PreferredEnd), [], PreferenceProof),
+    StartH >= PreferredStart,
+    StartH =< PreferredEnd.
+
+% Default: constraint satisfied if not violated
+satisfies_constraint_logic(Event, Constraint, KB, proof(not_violated, NegProof)) :-
+    \+ violates_constraint_logic(Event, Constraint, KB, _),
+    NegProof = proof(no_violation_found, closed_world_assumption).
+
+%% violates_constraint_logic(+Event, +Constraint, +KB, -Proof)
+%% Logical rules defining constraint violations
+
+% NO OVERLAP violation (logical definition)
+violates_constraint_logic(
+    event(Id, _, S1H, S1M, E1H, E1M, _, _),
+    no_overlap,
+    KB,
+    proof(overlaps_with(Id2, Title2), overlap_derivation)
+) :-
+    member(kb(schedule(Events)), KB),
+    member(event(Id2, Title2, S2H, S2M, E2H, E2M, _, _), Events),
+    Id \= Id2,
+    time_to_minutes(S1H, S1M, S1),
+    time_to_minutes(E1H, E1M, E1),
+    time_to_minutes(S2H, S2M, S2),
+    time_to_minutes(E2H, E2M, E2),
+    % Logical overlap condition
+    S1 < E2,
+    S2 < E1.
+
+% WORKING HOURS violation
+violates_constraint_logic(
+    event(_, _, StartH, StartM, EndH, EndM, _, _),
+    within_working_hours,
+    _KB,
+    proof(Violation, logical_check)
+) :-
+    working_hours(MinH, MinM, MaxH, MaxM),
+    time_to_minutes(StartH, StartM, StartMin),
+    time_to_minutes(EndH, EndM, EndMin),
+    time_to_minutes(MinH, MinM, MinMinutes),
+    time_to_minutes(MaxH, MaxM, MaxMinutes),
+    (   StartMin < MinMinutes, Violation = starts_too_early(StartH, StartM)
+    ;   EndMin > MaxMinutes, Violation = ends_too_late(EndH, EndM)
+    ).
+
+% POSITIVE DURATION violation
+violates_constraint_logic(
+    event(_, _, StartH, StartM, EndH, EndM, _, _),
+    positive_duration,
+    _KB,
+    proof(invalid_duration, logical_comparison)
+) :-
+    time_to_minutes(StartH, StartM, StartMin),
+    time_to_minutes(EndH, EndM, EndMin),
+    EndMin =< StartMin.
+
+%% ============================================================================
+%% SCHEDULE VALIDATION THROUGH LOGICAL INFERENCE
+%% ============================================================================
+
+%% valid_schedule(+Schedule, +KB, -Proof)
+%% Proves a schedule is valid by showing all events satisfy all hard constraints
+valid_schedule(schedule(Events), KB, proof(valid_schedule, EventProofs)) :-
+    findall(
+        proof(valid_event(Id), SubProof),
+        (
+            member(Event, Events),
+            Event = event(Id, _, _, _, _, _, _, _),
+            prove(valid_event(Event), [kb(schedule(Events))|KB], SubProof)
+        ),
+        EventProofs
+    ),
+    EventProofs \= [].
+
+%% find_violations(+Schedule, +KB, -Violations)
+%% Finds all constraint violations with logical proofs
+find_violations(schedule(Events), KB, Violations) :-
+    findall(
+        violation(EventId, Constraint, Proof),
+        (
+            member(Event, Events),
+            Event = event(EventId, _, _, _, _, _, _, _),
+            constraint_type(Constraint, hard),
+            violates_constraint_logic(Event, Constraint, [kb(schedule(Events))|KB], Proof)
+        ),
+        Violations
+    ).
 
 %% ============================================================================
 %% HARD CONSTRAINTS — Must be satisfied, no exceptions
