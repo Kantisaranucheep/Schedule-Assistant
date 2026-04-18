@@ -184,25 +184,35 @@ priority_scheduling_cost(_, _, 0).
 %%
 %% g(n) = Σ for each moved event:
 %%   move_penalty(3) + hours_shifted × shift_weight(2) + priority × priority_factor
+
+% Declarative penalty rules
+move_penalty(3).
+shift_penalty(2).
+priority_penalty_weight(0.5).
+
+% Declarative cost calculation for a single event
+event_displacement_cost(event(Id, _, OSH, OSM, OEH, OEM, Priority, _), ModifiedEvents, Cost) :-
+    member(event(Id, _, NSH, NSM, NEH, NEM, _, _), ModifiedEvents),
+    time_to_minutes(OSH, OSM, OldStart),
+    time_to_minutes(OEH, OEM, OldEnd),
+    time_to_minutes(NSH, NSM, NewStart),
+    time_to_minutes(NEH, NEM, NewEnd),
+    (   (OldStart =\= NewStart ; OldEnd =\= NewEnd)
+    ->  move_penalty(MovePenalty),
+        shift_penalty(ShiftWeight),
+        priority_penalty_weight(PriWeight),
+        Shift is abs(NewStart - OldStart),
+        ShiftHours is Shift / 60.0,
+        ShiftCost is ShiftHours * ShiftWeight,
+        PriorityPenalty is Priority * PriWeight,
+        Cost is MovePenalty + ShiftCost + PriorityPenalty
+    ;   Cost = 0
+    ).
+
 calculate_displacement_cost(OriginalEvents, ModifiedEvents, GCost) :-
     findall(EventCost, (
-        member(event(Id, _, OSH, OSM, OEH, OEM, Priority, _), OriginalEvents),
-        member(event(Id, _, NSH, NSM, NEH, NEM, _, _), ModifiedEvents),
-        % Check if event was moved
-        time_to_minutes(OSH, OSM, OldStart),
-        time_to_minutes(OEH, OEM, OldEnd),
-        time_to_minutes(NSH, NSM, NewStart),
-        time_to_minutes(NEH, NEM, NewEnd),
-        (   (OldStart =\= NewStart ; OldEnd =\= NewEnd)
-        ->  % Event was moved
-            Shift is abs(NewStart - OldStart),
-            ShiftHours is Shift / 60.0,
-            MovePenalty = 3,
-            ShiftCost is ShiftHours * 2,
-            PriorityPenalty is Priority * 0.5,
-            EventCost is MovePenalty + ShiftCost + PriorityPenalty
-        ;   EventCost = 0  % Not moved
-        )
+        member(E, OriginalEvents),
+        event_displacement_cost(E, ModifiedEvents, EventCost)
     ), Costs),
     sum_list(Costs, GCost).
 
@@ -220,12 +230,16 @@ calculate_displacement_cost(OriginalEvents, ModifiedEvents, GCost) :-
 %%   minimize_moves: lower h(n) weight, prefer fewer moves
 %%   maximize_quality: higher h(n) weight, protect high-priority
 %%   balanced: equal weights
+
+% Declarative priority loss rule
+priority_loss(Priority, Weight, Loss) :-
+    Loss is Priority * Priority * Weight.
+
 calculate_priority_loss(ConflictingEvents, Strategy, _Priorities, HCost) :-
     strategy_weight(Strategy, StratWeight),
     findall(EventHCost, (
-        member(event(_Id, _Title, _SH, _SM, _EH, _EM, Priority, _Type), ConflictingEvents),
-        ConflictSeverity is Priority * Priority,  % Quadratic penalty for high priority
-        EventHCost is ConflictSeverity * StratWeight
+        member(event(_, _, _, _, _, _, Priority, _), ConflictingEvents),
+        priority_loss(Priority, StratWeight, EventHCost)
     ), HCosts),
     sum_list(HCosts, HCost).
 
