@@ -835,6 +835,7 @@ class PrologService:
         candidates = []
         step = 30
         slot_start = min_start
+
         while slot_start + new_duration <= max_end:
             slot_end = slot_start + new_duration
             # Check no overlap with any existing event
@@ -844,8 +845,12 @@ class PrologService:
             if not has_overlap:
                 displacement = abs(slot_start - new_start)
                 disp_cost = displacement / 60.0 * 2
-                # Soft cost: preferred time bonus
-                soft_cost = self._calc_soft_cost(slot_start, slot_end, all_busy)
+                # DELEGATE soft cost to Prolog reasoning
+                soft_cost = self._get_prolog_soft_cost(
+                    new_event.get("id", "new"), new_title, 
+                    slot_start, slot_end, new_priority, 
+                    existing_events
+                )
                 score = disp_cost + soft_cost
                 candidates.append((score, slot_start, slot_end))
             slot_start += step
@@ -902,7 +907,9 @@ class PrologService:
                 if not has_overlap:
                     displacement = abs(slot_start - c_start)
                     disp_cost = displacement / 60.0 * 2
-                    soft_cost = self._calc_soft_cost(slot_start, slot_end, other_busy)
+                    soft_cost = self._get_prolog_soft_cost(
+                        c_id, c_title, slot_start, slot_end, c_priority, existing_events
+                    )
                     score = disp_cost + soft_cost + c_priority * 0.3
                     if best is None or score < best[0]:
                         best = (score, slot_start, slot_end)
@@ -931,53 +938,53 @@ class PrologService:
         options.sort(key=lambda o: o.cost)
         return options[:3]
     
-    def _calc_soft_cost(self, start_min: int, end_min: int, busy_intervals: List[tuple]) -> float:
-        """Calculate soft constraint cost (buffer proximity + overload)."""
-        cost = 0.0
-        # Buffer proximity: penalty if < 15 min gap to neighboring events
-        for bs, be in busy_intervals:
-            if 0 < start_min - be < 15:
-                cost += 3.0
-            if 0 < bs - end_min < 15:
-                cost += 3.0
-        # Daily overload: penalize if >6 events
-        num_events = len(busy_intervals)
-        if num_events > 8:
-            cost += (num_events - 8) * 5
-        elif num_events > 6:
-            cost += (num_events - 6) * 2
-        return cost
-    
+    def _get_prolog_soft_cost(
+        self, event_id: str, title: str, 
+        start_min: int, end_min: int, priority: int,
+        existing_events: List[Dict[str, Any]]
+    ) -> float:
+        """Query Prolog to infer the soft cost of a placement."""
+        if not self._ensure_initialized() or not self._constraint_solver_loaded:
+            return 0.0
+            
+        try:
+            events_str = self._build_events_list(existing_events)
+            sh, sm = divmod(start_min, 60)
+            eh, em = divmod(end_min, 60)
+            # event(Id, Title, SH, SM, EH, EM, Priority, Type)
+            query = (
+                f"total_soft_cost("
+                f"event(\"{event_id}\", \"{title}\", {sh}, {sm}, {eh}, {em}, {priority}, other), "
+                f"context({events_str}), [], Cost)"
+            )
+            results = list(self._prolog.query(query))
+            return float(results[0].get("Cost", 0.0)) if results else 0.0
+        except Exception as e:
+            print(f"Prolog cost inference failed: {e}")
+            return 0.0
+
     def _apply_strategy_weight(
         self, base_cost: float, priority: int, strategy: str, is_new_event: bool
     ) -> float:
-        """Apply strategy weighting as per constraint_solver.pl pick_best_option.
-        
-        Phase 3 - Strategy behavior:
-        - minimize_moves: Favor moving the fewest events (prefer moving new event only)
-        - maximize_quality: Protect high-priority events — move low-priority events first.
-          Uses persona-derived priority (1-10). Higher priority = much more expensive to move.
-        - balanced: Weighted compromise of moves + quality
-        """
-        if strategy == "minimize_moves":
-            if is_new_event:
-                return base_cost * 0.7  # Favor moving just the new event
-            return base_cost * 1.3
-        elif strategy == "maximize_quality":
-            # Use a single continuous priority scale regardless of new/existing.
-            # This guarantees a lower-priority event is always cheaper to move than
-            # a higher-priority one — the is_new_event distinction caused lower-priority
-            # existing events to be scored as more expensive than higher-priority new events.
-            priority_factor = priority / 10.0  # 0.1 – 1.0
-            return base_cost * (0.3 + priority_factor * 1.7)  # 0.47 (p=1) to 2.0 (p=10)
-        elif strategy == "balanced":
-            # Mild priority bias + mild move-count bias
-            priority_factor = priority / 10.0
-            if is_new_event:
-                return base_cost * (0.7 + priority_factor * 0.5)  # 0.7 – 1.2
-            else:
-                return base_cost * (0.8 + priority_factor * 0.7)  # 0.8 – 1.5
-        return base_cost
+        """Apply strategy weighting by querying Prolog facts."""
+        if not self._ensure_initialized():
+            return base_cost
+            
+        try:
+            query = f"scheduling_fact(strategy_weight({strategy}, Weight))"
+            results = list(self._prolog.query(query))
+            weight = float(results[0].get("Weight", 1.0)) if results else 1.0
+            
+            # The strategy behavior logic remains a mix; we use Prolog's weight 
+            # but Python still orchestrates the A* penalty application.
+            if strategy == "minimize_moves":
+                return base_cost * (0.7 if is_new_event else 1.3) * weight
+            elif strategy == "maximize_quality":
+                priority_factor = priority / 10.0
+                return base_cost * (0.3 + priority_factor * 1.7) * weight
+            return base_cost * weight
+        except Exception:
+            return base_cost
     
     # Keywords used to infer event type from title (Thai + English).
     # Must match the keyword list in SchedulingService._infer_event_type.

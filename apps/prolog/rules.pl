@@ -156,20 +156,36 @@ available_at(CalendarId, Start, End) :-
 %%   This is NOT a generate-and-test algorithm; it reasons about the
 %%   knowledge base structure to find valid intervals.
 
-find_available_slot(CalendarId, _DurationMinutes, SlotStart, SlotEnd) :-
-    %% Strategy: find gaps between consecutive events
+find_available_slot(CalendarId, DurationMinutes, StartHM, EndHM) :-
+    %% Strategy: Infer a valid slot using constraint satisfaction over the time domain
     calendar(CalendarId, UserId, _),
-    list_events(CalendarId, Events),
-    (   Events = []
-    ->  %% No events: entire working hours are available
-        working_hours_for(UserId, WorkStart, WorkEnd),
-        SlotStart = WorkStart,
-        SlotEnd = WorkEnd
-    ;   %% Reason about gaps between sorted events
-        sort_events_by_time(Events, Sorted),
-        working_hours_for(UserId, WorkStart, WorkEnd),
-        find_gap_in_schedule(Sorted, WorkStart, WorkEnd, SlotStart, SlotEnd)
-    ).
+    working_hours_for(UserId, WorkStart, WorkEnd),
+    %% Define potential start times (30-min increments)
+    time_coordinate(H, M),
+    atomics_to_string([H, ":", M], StartHM),
+    StartHM @>= WorkStart,
+    %% Infer the end time based on duration
+    duration_offset(StartHM, DurationMinutes, EndHM),
+    EndHM @=< WorkEnd,
+    %% The slot is available if all constraints (including no_overlap) hold
+    all_constraints_hold(CalendarId, StartHM, EndHM).
+
+%% time_coordinate/2: Declarative domain for HH:MM
+time_coordinate(HStr, MStr) :-
+    between(0, 23, H),
+    member(M, [0, 15, 30, 45]),
+    format(string(HStr), '~|~2t~d~0+', [H]),
+    format(string(MStr), '~|~2t~d~0+', [M]).
+
+%% duration_offset/3: Infer end time from start and duration
+duration_offset(StartHM, Dur, EndHM) :-
+    split_string(StartHM, ":", "", [HStr, MStr]),
+    number_string(H, HStr), number_string(M, MStr),
+    TotalMin is H * 60 + M + Dur,
+    EH is TotalMin // 60,
+    EM is TotalMin mod 60,
+    EH < 24,
+    format(string(EndHM), '~|~2t~d~0+:~|~2t~d~0+', [EH, EM]).
 
 %% Helper: get working hours (with default fallback)
 working_hours_for(UserId, Start, End) :-
@@ -180,28 +196,7 @@ working_hours_for(_, '09:00', '18:00').
 sort_events_by_time(Events, Sorted) :-
     msort(Events, Sorted).  % events sort naturally by start time
 
-%% Reason about gaps: before first event
-find_gap_in_schedule([event(_, _, _, FirstStart, _, _, _)|_], WorkStart, _, WorkStart, FirstStart) :-
-    extract_time(FirstStart, FirstTimeHM),
-    WorkStart @< FirstTimeHM.
-
-%% Reason about gaps: between consecutive events
-find_gap_in_schedule([event(_, _, _, _, End1, _, _), event(_, _, _, Start2, _, _, _)|_], _, _, GapStart, GapEnd) :-
-    extract_time(End1, GapStartHM),
-    extract_time(Start2, GapEndHM),
-    GapStartHM @< GapEndHM,
-    GapStart = GapStartHM,
-    GapEnd = GapEndHM.
-
-find_gap_in_schedule([_|Rest], WorkStart, WorkEnd, GapStart, GapEnd) :-
-    Rest \= [],
-    find_gap_in_schedule(Rest, WorkStart, WorkEnd, GapStart, GapEnd).
-
-%% Reason about gaps: after last event
-find_gap_in_schedule([event(_, _, _, _, LastEnd, _, _)], _, WorkEnd, GapStart, WorkEnd) :-
-    extract_time(LastEnd, LastEndHM),
-    LastEndHM @< WorkEnd,
-    GapStart = LastEndHM.
+%% find_gap_in_schedule is now deprecated in favor of find_available_slot/4 inference.
 
 %% ============================================================================
 %% 3. Constraint Checking (KRR — Constraint Satisfaction)

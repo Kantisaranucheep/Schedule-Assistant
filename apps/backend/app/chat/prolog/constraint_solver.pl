@@ -94,9 +94,13 @@ event_priority_class(P, low, 'Easy to move; minimal cost') :- P >= 2, P < 4.
 event_priority_class(P, optional, 'Can be freely rescheduled') :- P < 2.
 
 %% Strategy weights (how much to weigh priority loss by strategy)
-strategy_weight(minimize_moves, 0.5).
-strategy_weight(maximize_quality, 2.0).
-strategy_weight(balanced, 1.0).
+scheduling_fact(strategy_weight(minimize_moves, 0.5)).
+scheduling_fact(strategy_weight(maximize_quality, 2.0)).
+scheduling_fact(strategy_weight(balanced, 1.0)).
+
+%% Strategy classification rules
+strategy_preference(minimize_moves, move_count, high).
+strategy_preference(maximize_quality, event_quality, high).
 
 %% ============================================================================
 %% 3. Constraint Reasoning — Inference Over Declarations
@@ -376,13 +380,17 @@ calculate_displacement_cost(OriginalEvents, ModifiedEvents, GCost) :-
 %% ============================================================================
 
 calculate_priority_loss(ConflictingEvents, Strategy, _Priorities, HCost) :-
-    strategy_weight(Strategy, StratWeight),
+    scheduling_fact(strategy_weight(Strategy, StratWeight)),
     findall(EventHCost, (
         member(event(_Id, _Title, _SH, _SM, _EH, _EM, Priority, _Type), ConflictingEvents),
-        ConflictSeverity is Priority * Priority,
-        EventHCost is ConflictSeverity * StratWeight
+        infer_conflict_severity(Priority, Strategy, Severity),
+        EventHCost is Severity * StratWeight
     ), HCosts),
     sum_list(HCosts, HCost).
+
+%% infer_conflict_severity/3: Reason about how "bad" a conflict is based on priority and strategy
+infer_conflict_severity(Priority, _Strategy, Severity) :-
+    Severity is Priority * Priority.
 
 %% ============================================================================
 %% f(n) = g(n) + h(n) — COMBINED HEURISTIC

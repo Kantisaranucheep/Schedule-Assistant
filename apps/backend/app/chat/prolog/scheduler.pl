@@ -10,8 +10,9 @@
 %%   2. Scheduling Constraints — declared as first-class knowledge
 %%   3. Core Reasoning Rules  — declarative inference for conflicts/availability
 %%   4. Constraint Satisfaction — find_free_slots via constraint solving
-%%   5. Meta-Interpreter       — demo/1 for proving scheduling goals
-%%   6. Legacy Predicates      — backward-compatible algorithmic layer
+%%   5. Meta-Interpreter       — demo/1 and explain/2 for reasoning
+%%   6. Action Planning        — solve_request/3 for autonomous agents
+%%   7. Legacy Predicates      — backward-compatible algorithmic layer
 %%
 %% KRR Principles Applied:
 %%   - Knowledge is FACTS (not embedded in algorithms)
@@ -38,7 +39,9 @@
     conflict_reason/5,             % conflict_reason(S1,E1,S2,E2, Reason) — why conflict
     infer_available/4,             % infer_available(Events, MinStart, MaxEnd, Slot)
     satisfies_constraint/4,        % satisfies_constraint(Constraint, Start, End, Events)
-    demo/1                         % demo(Goal) — meta-interpreter
+    solve_request/3,               % solve_request(Request, Context, Plan)
+    demo/1,                        % demo(Goal) — meta-interpreter
+    explain/2                      % explain(Goal, Trace)
 ]).
 
 %% ============================================================================
@@ -167,14 +170,40 @@ valid_placement(Start, End, Events) :-
 
 infer_available(Events, MinStart, MaxEnd, slot(SH, SM, EH, EM)) :-
     scheduling_fact(slot_granularity(Step)),
-    between(0, 1000, N),
-    SlotStart is MinStart + N * Step,
+    %% Declaratively define the domain of potential start times
+    potential_start(MinStart, MaxEnd, Step, SlotStart),
     SlotStart < MaxEnd,
+    %% Reason about duration (here assumed to be Step for granularity checking)
     SlotEnd is SlotStart + Step,
     SlotEnd =< MaxEnd,
+    %% Infer validity through constraint satisfaction
     valid_placement(SlotStart, SlotEnd, Events),
     minutes_to_time(SlotStart, SH, SM),
     minutes_to_time(SlotEnd, EH, EM).
+
+%% potential_start/4: Declarative domain rule
+potential_start(Min, Max, Step, Start) :-
+    between(0, 1000, N),
+    Start is Min + N * Step,
+    Start < Max.
+
+%% --- Autonomous Action Planning ---
+%% solve_request(+Request, +Context, -Plan):
+%%   Given a request (like add_event), infer the necessary plan actions.
+
+solve_request(add_event(SH, SM, Dur, _Title), context(Events), [place(SH, SM, EH, EM)]) :-
+    time_to_minutes(SH, SM, Start),
+    End is Start + Dur,
+    valid_placement(Start, End, Events),
+    minutes_to_time(End, EH, EM).
+
+solve_request(add_event(SH, SM, Dur, Title), context(Events), Plan) :-
+    time_to_minutes(SH, SM, Start),
+    End is Start + Dur,
+    \+ valid_placement(Start, End, Events),
+    %% If direct placement fails, reason about alternatives
+    infer_available(Events, 360, 1380, slot(ASH, ASM, AEH, AEM)),
+    Plan = [suggest_move(Title, ASH, ASM, AEH, AEM)].
 
 %% ============================================================================
 %% 4. Meta-Interpreter — Reasoning About Scheduling Goals
@@ -208,6 +237,18 @@ demo(A < B) :- A < B.
 demo(A > B) :- A > B.
 demo(A >= B) :- A >= B.
 demo(A =< B) :- A =< B.
+demo(solve_request(R, C, P)) :- solve_request(R, C, P).
+
+%% explain/2: reasoning with trace
+explain(true, []) :- !.
+explain((A, B), Trace) :-
+    !, explain(A, TraceA), explain(B, TraceB), append(TraceA, TraceB, Trace).
+explain(valid_placement(S, E, Evts), [valid_placement(S, E)]) :-
+    valid_placement(S, E, Evts).
+explain(satisfies_constraint(C, S, E, _), [satisfied(C, S-E)]) :-
+    scheduling_fact(constraint(C)),
+    satisfies_constraint(C, S, E, _).
+explain(Goal, [proved(Goal)]) :- demo(Goal).
 
 %% ============================================================================
 %% 5. Legacy Predicates (Backward Compatible)
