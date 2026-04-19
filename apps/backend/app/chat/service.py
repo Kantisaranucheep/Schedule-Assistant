@@ -28,7 +28,7 @@ from app.chat.schemas import (
     ChatMessageRequest, ChatChoiceRequest
 )
 from app.chat.llm_service import LLMService
-from app.chat.prolog_service import get_prolog_service, PrologService, RescheduleOption
+from app.chat.prolog_service import get_prolog_service, PrologService, RescheduleOption, AddEventResult, TimeSuggestion
 from app.chat.event_repository import EventRepository
 from app.core.timezone import now as tz_now
 
@@ -270,7 +270,16 @@ class ChatAgentService:
         session_id: str,
         context: SessionContext
     ) -> ChatAgentResponse:
-        """Check for conflicts and handle appropriately."""
+        """
+        Check for conflicts and handle appropriately.
+        
+        Uses the BLACK BOX KRR approach: sends all data to Prolog's
+        handle_add_event solver and lets Prolog autonomously decide
+        whether the event can be added, has conflicts, or is invalid.
+        
+        Python does NOT call check_conflict or valid_placement directly —
+        Prolog handles all reasoning internally.
+        """
         event = context.event_data
         
         # Get existing events on that date
@@ -278,15 +287,25 @@ class ChatAgentService:
             event.day, event.month, event.year
         )
         
-        # Check for conflicts using Prolog
-        result = self.prolog.check_conflict(
+        # BLACK BOX: Ask Prolog to handle the entire add-event reasoning
+        result = self.prolog.handle_add_event(
             event.start_hour, event.start_minute,
             event.end_hour, event.end_minute,
             existing_events
         )
         
-        if result.has_conflict:
-            # Store conflict info
+        if result.status == 'invalid':
+            # Prolog detected constraint violations (e.g., negative duration)
+            context.reset()
+            violations_str = ", ".join(result.violations)
+            return self._build_response(
+                session_id, context,
+                f"Cannot create event: constraint violations detected ({violations_str}). Please check the time and try again.",
+                success=False
+            )
+        
+        if result.status == 'conflict':
+            # Prolog detected time conflicts
             conflict = result.conflicts[0]
             context.conflict_info = ConflictInfo(
                 event_id=conflict["id"],
@@ -300,7 +319,6 @@ class ChatAgentService:
                 end_minute=conflict["end_minute"],
             )
             
-            # Transition to CONFIRM_CONFLICT
             context.state = AgentState.CONFIRM_CONFLICT
             
             conflict_time = f"{conflict['start_hour']:02d}:{conflict['start_minute']:02d} - {conflict['end_hour']:02d}:{conflict['end_minute']:02d}"
@@ -314,29 +332,28 @@ class ChatAgentService:
                 ],
                 timeout=30
             )
-        else:
-            # No conflict - create the event
-            created = await self.repo.create_event(
-                title=event.title,
-                day=event.day,
-                month=event.month,
-                year=event.year,
-                start_hour=event.start_hour,
-                start_minute=event.start_minute,
-                end_hour=event.end_hour,
-                end_minute=event.end_minute,
-                location=event.location,
-                notes=event.notes,
-            )
-            
-            # Reset to INIT
-            context.reset()
-            
-            return self._build_response(
-                session_id, context,
-                f"✓ Event \"{event.title}\" created on {event.day}/{event.month}/{event.year} from {event.start_hour:02d}:{event.start_minute:02d} to {event.end_hour:02d}:{event.end_minute:02d}",
-                event_created=created
-            )
+        
+        # result.status == 'ok' — Prolog says all good, create the event
+        created = await self.repo.create_event(
+            title=event.title,
+            day=event.day,
+            month=event.month,
+            year=event.year,
+            start_hour=event.start_hour,
+            start_minute=event.start_minute,
+            end_hour=event.end_hour,
+            end_minute=event.end_minute,
+            location=event.location,
+            notes=event.notes,
+        )
+        
+        context.reset()
+        
+        return self._build_response(
+            session_id, context,
+            f"✓ Event \"{event.title}\" created on {event.day}/{event.month}/{event.year} from {event.start_hour:02d}:{event.start_minute:02d} to {event.end_hour:02d}:{event.end_minute:02d}",
+            event_created=created
+        )
     
     async def _handle_edit_event_intent(
         self,
@@ -2403,7 +2420,12 @@ class ChatAgentService:
         session_id: str,
         context: SessionContext
     ) -> ChatAgentResponse:
-        """Check for conflicts and apply the edit if none found."""
+        """
+        Check for conflicts and apply the edit if none found.
+        
+        Uses the BLACK BOX KRR approach: Prolog autonomously validates
+        the new time slot against existing events.
+        """
         evt = context.selected_event
         new_data = context.new_event_data
         
@@ -2413,14 +2435,23 @@ class ChatAgentService:
         )
         existing_events = [e for e in existing_events if e["id"] != evt.event_id]
         
-        # Check for conflicts
-        result = self.prolog.check_conflict(
+        # BLACK BOX: Let Prolog decide if this edit is valid
+        result = self.prolog.handle_add_event(
             new_data["start_hour"], new_data["start_minute"],
             new_data["end_hour"], new_data["end_minute"],
             existing_events
         )
         
-        if result.has_conflict:
+        if result.status == 'invalid':
+            context.reset()
+            violations_str = ", ".join(result.violations)
+            return self._build_response(
+                session_id, context,
+                f"Cannot apply edit: constraint violations ({violations_str}). Please check the time.",
+                success=False
+            )
+        
+        if result.status == 'conflict':
             conflict = result.conflicts[0]
             
             # Store conflict info and transition to conflict resolution

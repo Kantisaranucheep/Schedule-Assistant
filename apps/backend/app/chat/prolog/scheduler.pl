@@ -22,7 +22,7 @@
 
 :- module(scheduler, [
     %% --- Legacy exports (backward compatible) ---
-    check_conflict/5,
+    check_conflict/6,
     find_free_slots/7,
     find_free_ranges/5,
     find_free_days/7,
@@ -38,7 +38,23 @@
     conflict_reason/5,             % conflict_reason(S1,E1,S2,E2, Reason) — why conflict
     infer_available/4,             % infer_available(Events, MinStart, MaxEnd, Slot)
     satisfies_constraint/4,        % satisfies_constraint(Constraint, Start, End, Events)
-    demo/1                         % demo(Goal) — meta-interpreter
+    demo/1,                        % demo(Goal) — meta-interpreter
+
+    %% --- High-Level Black Box API (KRR Solvers) ---
+    handle_add_event/8,            % handle_add_event(SH, SM, EH, EM, Events, Status, Conflicts, Violations)
+    handle_suggest_times/7,        % handle_suggest_times(Dur, Events, MinSH, MinSM, MaxEH, MaxEM, Suggestions)
+    explain_conflicts/6,           % explain_conflicts(SH, SM, EH, EM, Events, Explanations)
+
+    %% --- Enhanced Meta-Interpreter with Explanation ---
+    demo_explain/2,                % demo_explain(Goal, Trace) — prove + reasoning trace
+
+    %% --- Custom Operators (KRR Syntax) ---
+    conflicts_with/2,              % event(S1,E1) conflicts_with event(S2,E2)
+    is_valid_in/2,                 % slot(SH,SM,EH,EM) is_valid_in context(Events)
+    satisfies_all/2,               % slot(SH,SM,EH,EM) satisfies_all constraints
+
+    %% --- Reasoning Metadata ---
+    reasoning_metadata/2           % reasoning_metadata(Key, Value) — introspection
 ]).
 
 %% ============================================================================
@@ -352,3 +368,365 @@ check_single_conflict(NH, NM, NEH, NEM, EH, EM, EEH, EEM) :-
     time_to_minutes(EH, EM, ExStart),
     time_to_minutes(EEH, EEM, ExEnd),
     intervals_overlap(NewStart, NewEnd, ExStart, ExEnd).
+
+%% ============================================================================
+%% 6. Custom Operators — Readable KRR Syntax
+%% ============================================================================
+%%
+%% Custom operators allow expressing scheduling knowledge in a natural,
+%% declarative form close to domain language:
+%%
+%%   event(540, 600) conflicts_with event(570, 660)
+%%   slot(9, 0, 10, 0) is_valid_in context(Events)
+%%   slot(9, 0, 10, 0) satisfies_all constraints
+%%
+%% KRR Principle: Knowledge should be readable and expressible in
+%% a form close to natural language. Operators enable this.
+
+:- op(700, xfx, conflicts_with).
+:- op(700, xfx, is_valid_in).
+:- op(700, xfx, satisfies_all).
+
+%% event(StartMin, EndMin) conflicts_with event(StartMin2, EndMin2)
+%% True when two time intervals (in minutes) overlap.
+event(S1, E1) conflicts_with event(S2, E2) :-
+    intervals_overlap(S1, E1, S2, E2).
+
+%% slot(SH, SM, EH, EM) is_valid_in context(Events)
+%% True when placing a slot at this time satisfies ALL scheduling constraints.
+slot(SH, SM, EH, EM) is_valid_in context(Events) :-
+    time_to_minutes(SH, SM, Start),
+    time_to_minutes(EH, EM, End),
+    valid_placement(Start, End, Events).
+
+%% slot(SH, SM, EH, EM) satisfies_all constraints
+%% True when a slot satisfies all declared constraints (ignoring events).
+slot(SH, SM, EH, EM) satisfies_all constraints :-
+    time_to_minutes(SH, SM, Start),
+    time_to_minutes(EH, EM, End),
+    forall(
+        scheduling_fact(constraint(C)),
+        satisfies_constraint(C, Start, End, [])
+    ).
+
+%% ============================================================================
+%% 7. Reasoning Metadata — Introspection About the Reasoning Process
+%% ============================================================================
+%%
+%% Metadata facts describe the reasoning system itself.
+%% This enables meta-level queries like "what constraints exist?"
+%% or "what strategies does the system support?"
+%%
+%% KRR Principle: A system should be able to reason about its own knowledge.
+
+:- dynamic reasoning_metadata/2.
+
+reasoning_metadata(system_name, schedule_assistant).
+reasoning_metadata(reasoning_type, constraint_based).
+reasoning_metadata(supported_action, add_event).
+reasoning_metadata(supported_action, suggest_times).
+reasoning_metadata(supported_action, explain_conflicts).
+reasoning_metadata(constraint_type, hard).
+reasoning_metadata(constraint_type, soft).
+reasoning_metadata(explanation_supported, true).
+reasoning_metadata(meta_interpretation, true).
+
+%% ============================================================================
+%% 8. Enhanced Meta-Interpreter with Explanation Trace
+%% ============================================================================
+%%
+%% demo_explain(+Goal, -Trace)
+%%
+%% Like demo/1 but also returns the reasoning trace — a structured term
+%% describing HOW the goal was proved. This is a key KRR feature:
+%% the system can explain its own reasoning.
+%%
+%% Trace is one of:
+%%   proved(true)
+%%   proved(and(TraceA, TraceB))
+%%   proved(or_left(TraceA)) | proved(or_right(TraceB))
+%%   proved(negation_as_failure(Goal))
+%%   proved(overlap(S1-E1, S2-E2))
+%%   proved(valid_placement(all_constraints_satisfied))
+%%   proved(constraint(Name, satisfied))
+%%   proved(from_rule(Goal, BodyTrace))
+%%   proved(from_fact(Goal))
+%%   disproved(valid_placement(failed_constraint(C)))
+
+demo_explain(true, proved(true)) :- !.
+
+demo_explain((A, B), proved(and(EA, EB))) :-
+    !, demo_explain(A, EA), demo_explain(B, EB).
+
+demo_explain((A ; _B), proved(or_left(EA))) :-
+    demo_explain(A, EA), !.
+demo_explain((_A ; B), proved(or_right(EB))) :-
+    !, demo_explain(B, EB).
+
+demo_explain(\+ A, proved(negation_as_failure(A))) :-
+    !, \+ demo(A).
+
+%% Scheduling-specific goals with explanation
+demo_explain(intervals_overlap(S1, E1, S2, E2),
+    proved(overlap(S1-E1, S2-E2))) :-
+    intervals_overlap(S1, E1, S2, E2).
+
+demo_explain(valid_placement(S, E, Evts),
+    proved(valid_placement(all_constraints_satisfied))) :-
+    valid_placement(S, E, Evts), !.
+demo_explain(valid_placement(S, E, Evts),
+    disproved(valid_placement(failed_constraint(C)))) :-
+    scheduling_fact(constraint(C)),
+    \+ satisfies_constraint(C, S, E, Evts), !.
+
+demo_explain(satisfies_constraint(C, S, E, Evts),
+    proved(constraint(C, satisfied))) :-
+    satisfies_constraint(C, S, E, Evts).
+
+demo_explain(conflict_reason(S1, E1, S2, E2, R),
+    proved(conflict_reason(R))) :-
+    conflict_reason(S1, E1, S2, E2, R).
+
+%% Prove from declared scheduling rules
+demo_explain(Goal, proved(from_rule(Goal, BodyTrace))) :-
+    scheduling_rule(Goal, Body),
+    demo_explain(Body, BodyTrace).
+
+%% Prove from declared scheduling facts
+demo_explain(Goal, proved(from_fact(Goal))) :-
+    scheduling_fact(Goal).
+
+%% Arithmetic goals
+demo_explain(A < B, proved(A < B)) :- A < B.
+demo_explain(A > B, proved(A > B)) :- A > B.
+demo_explain(A >= B, proved(A >= B)) :- A >= B.
+demo_explain(A =< B, proved(A =< B)) :- A =< B.
+
+%% ============================================================================
+%% 9. High-Level Black Box API — Autonomous Reasoning Solvers
+%% ============================================================================
+%%
+%% These predicates implement the "Black Box" pattern for KRR:
+%%
+%%   Python says: "User wants to add this event. Here's all the data."
+%%   Prolog reasons: checks constraints, detects conflicts, generates explanations
+%%   Prolog returns: a complete decision — Python doesnt know HOW it was decided.
+%%
+%% This is the core of KRR:
+%%   - Knowledge (facts + rules) is in Prolog
+%%   - Reasoning (inference + constraint satisfaction) is in Prolog
+%%   - Python is just the messenger
+%%
+%% KRR Keywords demonstrated:
+%%   Solver, Facts, Rules, Constraints, Meta-interpreter, Metadata
+
+%% ---------------------------------------------------------------------------
+%% handle_add_event(+SH, +SM, +EH, +EM, +Events, -Status, -Conflicts, -Violations)
+%% ---------------------------------------------------------------------------
+%%
+%% Autonomous solver for "Can I add this event?"
+%%
+%% Input:
+%%   SH, SM, EH, EM  — proposed event start/end time (hours, minutes)
+%%   Events           — list of existing events: [event(ID, Title, SH, SM, EH, EM), ...]
+%%
+%% Output (separate variables for reliable pyswip interop):
+%%   Status      — atom: ok | conflict | invalid
+%%   Conflicts   — list of conflict(ID, Title, SH, SM, EH, EM)  (empty if ok/invalid)
+%%   Violations  — list of constraint name atoms                  (empty if ok/conflict)
+%%
+%% The solver internally:
+%%   1. Validates hard constraints (positive_duration, within_bounds)
+%%   2. Checks for overlaps with existing events
+%%   3. Classifies the result and returns structured data
+%%
+%% Python never calls check_conflict, valid_placement, or satisfies_constraint
+%% directly — the solver handles everything.
+
+handle_add_event(SH, SM, EH, EM, Events, Status, Conflicts, Violations) :-
+    time_to_minutes(SH, SM, Start),
+    time_to_minutes(EH, EM, End),
+    %% Phase 1: Validate basic constraints (everything except overlap)
+    findall(
+        C,
+        (   scheduling_fact(constraint(C)),
+            C \= no_overlap,
+            \+ satisfies_constraint(C, Start, End, Events)
+        ),
+        ViolationList
+    ),
+    (   ViolationList \= []
+    ->  Status = invalid, Conflicts = [], Violations = ViolationList
+    ;   %% Phase 2: Check for conflicts with existing events
+        findall(
+            conflict(ID, Title, ESH, ESM, EEH, EEM),
+            (
+                member(event(ID, Title, ESH, ESM, EEH, EEM), Events),
+                time_to_minutes(ESH, ESM, ExStart),
+                time_to_minutes(EEH, EEM, ExEnd),
+                intervals_overlap(Start, End, ExStart, ExEnd)
+            ),
+            ConflictList
+        ),
+        (   ConflictList = []
+        ->  Status = ok, Conflicts = [], Violations = []
+        ;   Status = conflict, Conflicts = ConflictList, Violations = []
+        )
+    ).
+
+%% ---------------------------------------------------------------------------
+%% handle_suggest_times(+Duration, +Events, +MinSH, +MinSM, +MaxEH, +MaxEM, -Suggestions)
+%% ---------------------------------------------------------------------------
+%%
+%% Autonomous solver for "What are the best times for an event?"
+%%
+%% Input:
+%%   Duration          — required duration in minutes
+%%   Events            — existing events on that day
+%%   MinSH..MaxEM      — time bounds (earliest start, latest end)
+%%
+%% Output (Suggestions):
+%%   List of suggestion(SH, SM, EH, EM, Score, Reason)
+%%   Sorted by Score ascending (lower = better).
+%%   Up to 5 suggestions returned.
+%%
+%% Reason is one of:
+%%   ideal_time, good_buffer, outside_preferred_hours,
+%%   tight_buffer, heavy_day, acceptable
+%%
+%% The solver internally:
+%%   1. Generates all candidate slots (using granularity from knowledge base)
+%%   2. Filters by constraint satisfaction (valid_placement)
+%%   3. Scores each slot using soft constraint reasoning
+%%   4. Ranks and returns top suggestions with explanations
+
+handle_suggest_times(Duration, Events, MinSH, MinSM, MaxEH, MaxEM, Suggestions) :-
+    time_to_minutes(MinSH, MinSM, MinStart),
+    time_to_minutes(MaxEH, MaxEM, MaxEnd),
+    scheduling_fact(slot_granularity(Step)),
+    MaxSlotStart is MaxEnd - Duration,
+    findall(
+        suggestion(Score, SH, SM, EH, EM, Reason),
+        (
+            between(0, 1000, N),
+            SlotStart is MinStart + N * Step,
+            SlotStart =< MaxSlotStart,
+            SlotEnd is SlotStart + Duration,
+            SlotEnd =< MaxEnd,
+            valid_placement(SlotStart, SlotEnd, Events),
+            score_time_slot(SlotStart, SlotEnd, Events, Score, Reason),
+            minutes_to_time(SlotStart, SH, SM),
+            minutes_to_time(SlotEnd, EH, EM)
+        ),
+        AllSuggestions
+    ),
+    sort(AllSuggestions, Sorted),
+    take_top_n(5, Sorted, Suggestions).
+
+%% ---------------------------------------------------------------------------
+%% explain_conflicts(+SH, +SM, +EH, +EM, +Events, -Explanations)
+%% ---------------------------------------------------------------------------
+%%
+%% Explain WHY a proposed time has conflicts — returns structured explanations.
+%%
+%% Output (Explanations):
+%%   List of explanation(Type, Detail)
+%%   Type is: overlap | constraint_violation
+%%   Detail provides specific information about the issue.
+
+explain_conflicts(SH, SM, EH, EM, Events, Explanations) :-
+    time_to_minutes(SH, SM, Start),
+    time_to_minutes(EH, EM, End),
+    findall(
+        explanation(Type, Detail),
+        (
+            %% Check overlap conflicts
+            (
+                member(event(ID, Title, ESH, ESM, EEH, EEM), Events),
+                time_to_minutes(ESH, ESM, ExStart),
+                time_to_minutes(EEH, EEM, ExEnd),
+                intervals_overlap(Start, End, ExStart, ExEnd),
+                Type = overlap,
+                Detail = overlaps_with(ID, Title, ESH, ESM, EEH, EEM)
+            )
+        ;
+            %% Check constraint violations
+            (
+                scheduling_fact(constraint(C)),
+                C \= no_overlap,
+                \+ satisfies_constraint(C, Start, End, Events),
+                Type = constraint_violation,
+                Detail = violates(C)
+            )
+        ),
+        Explanations
+    ).
+
+%% ============================================================================
+%% 10. Slot Scoring & Classification — Soft Constraint Reasoning for Solver
+%% ============================================================================
+%%
+%% These predicates score candidate time slots based on soft constraints.
+%% They are used internally by handle_suggest_times but can also be
+%% queried directly for analysis.
+
+%% score_time_slot(+Start, +End, +Events, -Score, -Reason)
+%% Score a candidate slot — lower is better.
+score_time_slot(Start, End, Events, Score, Reason) :-
+    slot_buffer_cost(Start, End, Events, BufCost),
+    slot_preferred_time_cost(Start, PrefCost),
+    slot_daily_load_cost(Events, LoadCost),
+    Score is BufCost + PrefCost + LoadCost,
+    classify_slot_quality(Score, BufCost, PrefCost, LoadCost, Reason).
+
+%% Buffer proximity cost — penalty for events too close together
+slot_buffer_cost(Start, End, Events, Cost) :-
+    findall(1, (
+        member(event(_, _, ESH, ESM, EEH, EEM), Events),
+        time_to_minutes(ESH, ESM, EStart),
+        time_to_minutes(EEH, EEM, EEnd),
+        (   (EEnd > Start - 15, EEnd =< Start)
+        ;   (EStart >= End, EStart < End + 15)
+        )
+    ), CloseEvents),
+    length(CloseEvents, N),
+    Cost is N * 3.
+
+%% Preferred time window cost — prefer 9:00-17:00
+slot_preferred_time_cost(Start, Cost) :-
+    (   Start >= 540, Start =< 1020
+    ->  Cost = 0
+    ;   Diff is abs(Start - 780),
+        Cost is min(Diff // 30, 10)
+    ).
+
+%% Daily load cost — penalty for overloaded days
+slot_daily_load_cost(Events, Cost) :-
+    length(Events, NumEvents),
+    (   NumEvents > 8
+    ->  Cost is (NumEvents - 8) * 5
+    ;   NumEvents > 6
+    ->  Cost is (NumEvents - 6) * 2
+    ;   Cost = 0
+    ).
+
+%% classify_slot_quality(+Total, +BufCost, +PrefCost, +LoadCost, -Reason)
+%% Produce a human-readable reason for the slots score.
+classify_slot_quality(Total, _BufCost, _PrefCost, _LoadCost, ideal_time) :-
+    Total =:= 0, !.
+classify_slot_quality(_Total, BufCost, PrefCost, _LoadCost, suboptimal_time_and_tight_buffer) :-
+    PrefCost > 0, BufCost > 0, !.
+classify_slot_quality(_Total, _BufCost, PrefCost, _LoadCost, outside_preferred_hours) :-
+    PrefCost > 0, !.
+classify_slot_quality(_Total, BufCost, _PrefCost, _LoadCost, tight_buffer) :-
+    BufCost > 0, !.
+classify_slot_quality(_Total, _BufCost, _PrefCost, LoadCost, heavy_day) :-
+    LoadCost > 0, !.
+classify_slot_quality(_, _, _, _, acceptable).
+
+%% take_top_n(+N, +List, -TopN) — take first N elements
+take_top_n(_, [], []) :- !.
+take_top_n(0, _, []) :- !.
+take_top_n(N, [H|T], [H|Rest]) :-
+    N > 0, N1 is N - 1,
+    take_top_n(N1, T, Rest).

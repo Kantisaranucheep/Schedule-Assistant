@@ -118,6 +118,46 @@ class RescheduleOption:
         )
 
 
+@dataclass
+class AddEventResult:
+    """
+    Result from the Prolog black-box add-event solver.
+    
+    This is the KRR "black box" response — Python doesn't know
+    how Prolog reached this decision, only what the decision is.
+    """
+    status: str  # 'ok', 'conflict', 'invalid'
+    conflicts: List[Dict[str, Any]]  # conflict details if status == 'conflict'
+    violations: List[str]  # constraint violations if status == 'invalid'
+
+
+@dataclass
+class TimeSuggestion:
+    """
+    A single time suggestion from the Prolog black-box solver.
+    
+    Includes the slot, a quality score, and the REASON why
+    this time was ranked this way — enabling Prolog to explain
+    its reasoning to the user.
+    """
+    start_hour: int
+    start_minute: int
+    end_hour: int
+    end_minute: int
+    score: float
+    reason: str  # e.g., 'ideal_time', 'outside_preferred_hours', 'tight_buffer'
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "start_hour": self.start_hour,
+            "start_minute": self.start_minute,
+            "end_hour": self.end_hour,
+            "end_minute": self.end_minute,
+            "score": self.score,
+            "reason": self.reason,
+        }
+
+
 class PrologService:
     """Service for Prolog-based scheduling logic."""
     
@@ -572,6 +612,338 @@ class PrologService:
                     break
         
         return free_days
+    
+    # =========================================================================
+    # Black Box KRR API — High-Level Reasoning Requests
+    # =========================================================================
+    # These methods treat Prolog as an autonomous reasoning agent.
+    # Python sends all data and a high-level goal; Prolog handles
+    # ALL reasoning internally and returns a complete decision.
+    #
+    # Python does NOT know which predicates Prolog uses internally —
+    # it only understands the result type.
+    
+    def handle_add_event(
+        self,
+        start_hour: int,
+        start_minute: int,
+        end_hour: int,
+        end_minute: int,
+        existing_events: List[Dict[str, Any]]
+    ) -> AddEventResult:
+        """
+        Black-box KRR solver: "Can I add this event?"
+        
+        Sends all data to Prolog and lets it autonomously reason about:
+        - Constraint validation (duration, bounds)
+        - Conflict detection with existing events
+        - Result classification
+        
+        Python doesn't call check_conflict or valid_placement —
+        Prolog handles everything and returns a complete decision.
+        
+        Returns:
+            AddEventResult with status ('ok', 'conflict', 'invalid')
+            and relevant details.
+        """
+        if not self._ensure_initialized():
+            print("[handle_add_event] Prolog not initialized, using Python fallback")
+            return self._handle_add_event_python(
+                start_hour, start_minute, end_hour, end_minute,
+                existing_events
+            )
+        
+        try:
+            events_str = self._build_events_list(existing_events)
+            
+            # Use separate output variables (Status, Conflicts, Violations)
+            # instead of a single compound term — pyswip handles atoms and
+            # lists reliably, but compound terms like result(...) may not
+            # expose .args correctly across all pyswip versions.
+            query = (
+                f"handle_add_event({start_hour}, {start_minute}, "
+                f"{end_hour}, {end_minute}, {events_str}, "
+                f"Status, Conflicts, Violations)"
+            )
+            
+            print(f"[handle_add_event] Query: {query[:200]}...")
+            
+            results = list(self._prolog.query(query))
+            
+            if not results:
+                print("[handle_add_event] No Prolog results, using Python fallback")
+                return self._handle_add_event_python(
+                    start_hour, start_minute, end_hour, end_minute,
+                    existing_events
+                )
+            
+            result = results[0]
+            status_raw = result.get("Status")
+            conflicts_raw = result.get("Conflicts", [])
+            violations_raw = result.get("Violations", [])
+            
+            print(f"[handle_add_event] Raw: status={status_raw} (type={type(status_raw).__name__}), "
+                  f"conflicts={conflicts_raw} (type={type(conflicts_raw).__name__}), "
+                  f"violations={violations_raw}")
+            
+            # Parse status atom — pyswip returns atoms as str or Atom objects
+            status = str(status_raw) if status_raw is not None else "ok"
+            
+            if status == "invalid":
+                violations = []
+                if isinstance(violations_raw, list):
+                    violations = [str(v) for v in violations_raw]
+                return AddEventResult(status='invalid', conflicts=[], violations=violations)
+            
+            if status == "conflict":
+                conflicts = self._parse_conflict_list(conflicts_raw)
+                if conflicts:
+                    return AddEventResult(status='conflict', conflicts=conflicts, violations=[])
+                # If we got status=conflict but couldn't parse conflicts, fall through
+                print("[handle_add_event] WARNING: Got conflict status but no parseable conflicts")
+            
+            if status == "ok":
+                return AddEventResult(status='ok', conflicts=[], violations=[])
+            
+            # Unrecognized status — fall back to Python for safety
+            print(f"[handle_add_event] Unrecognized status '{status}', using Python fallback")
+            return self._handle_add_event_python(
+                start_hour, start_minute, end_hour, end_minute,
+                existing_events
+            )
+            
+        except Exception as e:
+            print(f"Prolog handle_add_event failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return self._handle_add_event_python(
+                start_hour, start_minute, end_hour, end_minute,
+                existing_events
+            )
+    
+    def handle_suggest_times(
+        self,
+        duration_minutes: int,
+        existing_events: List[Dict[str, Any]],
+        min_start_hour: int = 6,
+        min_start_minute: int = 0,
+        max_end_hour: int = 23,
+        max_end_minute: int = 0,
+        max_results: int = 5
+    ) -> List[TimeSuggestion]:
+        """
+        Black-box KRR solver: "What are the best times for this event?"
+        
+        Sends duration + existing events + bounds to Prolog.
+        Prolog autonomously:
+        - Generates candidate slots
+        - Validates against all constraints
+        - Scores using soft constraint reasoning
+        - Ranks and returns top suggestions with explanations
+        
+        Returns:
+            List of TimeSuggestion with score and reason for ranking.
+        """
+        if not self._ensure_initialized():
+            return self._handle_suggest_times_python(
+                duration_minutes, existing_events,
+                min_start_hour, min_start_minute,
+                max_end_hour, max_end_minute,
+                max_results
+            )
+        
+        try:
+            events_str = self._build_events_list(existing_events)
+            
+            query = (
+                f"handle_suggest_times({duration_minutes}, {events_str}, "
+                f"{min_start_hour}, {min_start_minute}, "
+                f"{max_end_hour}, {max_end_minute}, Suggestions)"
+            )
+            
+            results = list(self._prolog.query(query))
+            
+            if not results:
+                return self._handle_suggest_times_python(
+                    duration_minutes, existing_events,
+                    min_start_hour, min_start_minute,
+                    max_end_hour, max_end_minute,
+                    max_results
+                )
+            
+            suggestions = results[0].get("Suggestions", [])
+            return self._parse_suggestions(suggestions, max_results)
+            
+        except Exception as e:
+            print(f"Prolog handle_suggest_times failed: {e}")
+            return self._handle_suggest_times_python(
+                duration_minutes, existing_events,
+                min_start_hour, min_start_minute,
+                max_end_hour, max_end_minute,
+                max_results
+            )
+    
+    # =========================================================================
+    # Black Box Result Parsers
+    # =========================================================================
+    
+    def _parse_conflict_list(self, conflicts_raw) -> List[Dict[str, Any]]:
+        """
+        Parse a list of conflict(ID, Title, SH, SM, EH, EM) terms from Prolog.
+        
+        Uses the same parsing approach as the proven check_conflict method.
+        """
+        conflicts = []
+        if not isinstance(conflicts_raw, list):
+            return conflicts
+        
+        for c in conflicts_raw:
+            if hasattr(c, 'args'):
+                args = c.args
+                conflicts.append({
+                    "id": str(args[0]),
+                    "title": str(args[1]),
+                    "start_hour": int(args[2]),
+                    "start_minute": int(args[3]),
+                    "end_hour": int(args[4]),
+                    "end_minute": int(args[5]),
+                })
+            elif hasattr(c, 'value'):
+                # Some pyswip versions use .value
+                print(f"[_parse_conflict_list] Got .value type: {c}")
+            else:
+                print(f"[_parse_conflict_list] Unknown conflict format: {c} (type={type(c).__name__})")
+        
+        return conflicts
+    
+    def _parse_suggestions(self, suggestions, max_results: int) -> List[TimeSuggestion]:
+        """Parse the Prolog suggestion(Score, SH, SM, EH, EM, Reason) terms."""
+        parsed = []
+        if not isinstance(suggestions, list):
+            return parsed
+        
+        for s in suggestions[:max_results]:
+            if hasattr(s, 'args'):
+                args = s.args
+                parsed.append(TimeSuggestion(
+                    start_hour=int(args[1]),
+                    start_minute=int(args[2]),
+                    end_hour=int(args[3]),
+                    end_minute=int(args[4]),
+                    score=float(args[0]),
+                    reason=str(args[5]),
+                ))
+        
+        return parsed
+    
+    # =========================================================================
+    # Python Fallbacks for Black Box API
+    # =========================================================================
+    
+    def _handle_add_event_python(
+        self,
+        start_hour: int,
+        start_minute: int,
+        end_hour: int,
+        end_minute: int,
+        existing_events: List[Dict[str, Any]]
+    ) -> AddEventResult:
+        """Python fallback for the add-event solver."""
+        start = start_hour * 60 + start_minute
+        end = end_hour * 60 + end_minute
+        
+        # Check basic validity
+        violations = []
+        if end <= start:
+            violations.append("positive_duration")
+        if start < 360 or end > 1380:
+            violations.append("within_bounds")
+        if violations:
+            return AddEventResult(status='invalid', conflicts=[], violations=violations)
+        
+        # Check conflicts
+        conflicts = []
+        for event in existing_events:
+            ex_start = event["start_hour"] * 60 + event["start_minute"]
+            ex_end = event["end_hour"] * 60 + event["end_minute"]
+            if start < ex_end and ex_start < end:
+                conflicts.append({
+                    "id": event.get("id", "unknown"),
+                    "title": event.get("title", ""),
+                    "start_hour": event["start_hour"],
+                    "start_minute": event["start_minute"],
+                    "end_hour": event["end_hour"],
+                    "end_minute": event["end_minute"],
+                })
+        
+        if conflicts:
+            return AddEventResult(status='conflict', conflicts=conflicts, violations=[])
+        
+        return AddEventResult(status='ok', conflicts=[], violations=[])
+    
+    def _handle_suggest_times_python(
+        self,
+        duration_minutes: int,
+        existing_events: List[Dict[str, Any]],
+        min_start_hour: int,
+        min_start_minute: int,
+        max_end_hour: int,
+        max_end_minute: int,
+        max_results: int
+    ) -> List[TimeSuggestion]:
+        """Python fallback for the suggest-times solver."""
+        min_start = min_start_hour * 60 + min_start_minute
+        max_end = max_end_hour * 60 + max_end_minute
+        step = 30
+        
+        busy = []
+        for e in existing_events:
+            s = e["start_hour"] * 60 + e["start_minute"]
+            end = e["end_hour"] * 60 + e["end_minute"]
+            busy.append((s, end))
+        busy.sort()
+        
+        suggestions = []
+        current = min_start
+        while current + duration_minutes <= max_end and len(suggestions) < max_results * 3:
+            slot_end = current + duration_minutes
+            is_free = not any(current < be and slot_end > bs for bs, be in busy)
+            
+            if is_free:
+                # Score the slot
+                buf_cost = sum(
+                    3 for bs, be in busy
+                    if (0 < current - be < 15) or (0 < bs - slot_end < 15)
+                )
+                pref_cost = 0 if 540 <= current <= 1020 else min(abs(current - 780) // 30, 10)
+                load_cost = max(0, (len(busy) - 6) * 2) if len(busy) > 6 else 0
+                score = buf_cost + pref_cost + load_cost
+                
+                if score == 0:
+                    reason = "ideal_time"
+                elif pref_cost > 0 and buf_cost > 0:
+                    reason = "suboptimal_time_and_tight_buffer"
+                elif pref_cost > 0:
+                    reason = "outside_preferred_hours"
+                elif buf_cost > 0:
+                    reason = "tight_buffer"
+                elif load_cost > 0:
+                    reason = "heavy_day"
+                else:
+                    reason = "acceptable"
+                
+                sh, sm = divmod(current, 60)
+                eh, em = divmod(slot_end, 60)
+                suggestions.append(TimeSuggestion(
+                    start_hour=sh, start_minute=sm,
+                    end_hour=eh, end_minute=em,
+                    score=score, reason=reason,
+                ))
+            
+            current += step
+        
+        suggestions.sort(key=lambda s: s.score)
+        return suggestions[:max_results]
     
     def _build_events_list(self, events: List[Dict[str, Any]]) -> str:
         """Build a Prolog list of events."""
