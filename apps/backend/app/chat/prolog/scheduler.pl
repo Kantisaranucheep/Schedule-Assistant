@@ -39,19 +39,19 @@
     prove_scheduling_goal/3     % prove_scheduling_goal(Goal, KB, Proof)
 ]).
 
+:- use_module(library(clpfd)).  % Constraint Logic Programming over Finite Domains
+
 %% ============================================================================
 %% KNOWLEDGE BASE: Logical Rules for Scheduling
 %% ============================================================================
 
-% Temporal logic rules
-temporal_relation(before(T1, T2)) :- T1 < T2.
-temporal_relation(after(T1, T2)) :- T1 > T2.
+% Temporal logic rules using CLP(FD) constraints
+temporal_relation(before(T1, T2)) :- T1 #< T2.
+temporal_relation(after(T1, T2)) :- T1 #> T2.
 temporal_relation(overlaps(interval(S1, E1), interval(S2, E2))) :-
-    S1 < E2, S2 < E1.
+    S1 #< E2, S2 #< E1.
 temporal_relation(disjoint(interval(S1, E1), interval(S2, E2))) :-
-    E1 =< S2.
-temporal_relation(disjoint(interval(S1, E1), interval(S2, E2))) :-
-    E2 =< S1.
+    (E1 #=< S2) ; (E2 #=< S1).
 
 % Scheduling domain knowledge
 scheduling_rule(conflict_exists(Event1, Event2)) :-
@@ -209,19 +209,19 @@ prove_conflict(
     time_to_minutes(NEH, NEM, NewEnd),
     time_to_minutes(ESH, ESM, ExStart),
     time_to_minutes(EEH, EEM, ExEnd),
-    % Prove overlap
-    NewStart < ExEnd,
-    NewEnd > ExStart,
+    % Prove overlap using CLP(FD) constraints (declarative!)
+    NewStart #< ExEnd,
+    NewEnd #> ExStart,
     % Build reasoning chain
     ReasoningChain = [
         step(extracted_intervals, 'extracted time intervals from events'),
         step(new_interval(NewStart, NewEnd), 'new event interval'),
         step(existing_interval(ExStart, ExEnd), 'existing event interval'),
-        step(check_overlap_condition, 'checking overlap condition'),
-        step(condition_1(NewStart < ExEnd), format('~w < ~w is true', [NewStart, ExEnd])),
-        step(condition_2(NewEnd > ExStart), format('~w > ~w is true', [NewEnd, ExStart])),
-        step(conclusion(overlap), 'by temporal logic: intervals overlap'),
-        step(therefore(conflict(NewId, ConflictId)), 'therefore: conflict exists')
+        step(check_overlap_condition, 'checking overlap condition using constraints'),
+        step(constraint_1(NewStart #< ExEnd), format('~w #< ~w (constraint satisfied)', [NewStart, ExEnd])),
+        step(constraint_2(NewEnd #> ExStart), format('~w #> ~w (constraint satisfied)', [NewEnd, ExStart])),
+        step(conclusion(overlap), 'by constraint satisfaction: intervals overlap'),
+        step(therefore(conflict(NewId, ConflictId)), 'therefore: conflict exists via logical derivation')
     ].
 
 %% prove_no_conflict(+NewEvent, +Events, -Proof)
@@ -242,14 +242,14 @@ prove_no_conflict(
             NewId \= OtherId,
             time_to_minutes(OSH, OSM, OtherStart),
             time_to_minutes(OEH, OEM, OtherEnd),
-            % Prove disjoint (not overlapping)
-            (   NewEnd =< OtherStart
+            % Prove disjoint using CLP(FD) constraints (declarative!)
+            (   NewEnd #=< OtherStart
             ->  DisjointProof = proof(before(NewEnd, OtherStart), 
-                    'new event ends before existing starts')
-            ;   OtherEnd =< NewStart
+                    'new event ends before existing starts (constraint)')
+            ;   OtherEnd #=< NewStart
             ->  DisjointProof = proof(after(NewStart, OtherEnd),
-                    'new event starts after existing ends')
-            ;   fail  % Not disjoint - this case shouldn't succeed
+                    'new event starts after existing ends (constraint)')
+            ;   fail  % Not disjoint - constraint not satisfiable
             )
         ),
         AllDisjointProofs
@@ -292,12 +292,12 @@ prove_slot_free(
             member(event(EventId, _, ESH, ESM, EEH, EEM), Events),
             time_to_minutes(ESH, ESM, EventStart),
             time_to_minutes(EEH, EEM, EventEnd),
-            % Prove disjoint
-            (   SlotEnd =< EventStart
+            % Prove disjoint using CLP(FD) constraints
+            (   SlotEnd #=< EventStart
             ->  Reasoning = ends_before(SlotEnd, EventStart)
-            ;   EventEnd =< SlotStart
+            ;   EventEnd #=< SlotStart
             ->  Reasoning = starts_after(SlotStart, EventEnd)
-            ;   fail  % Overlap - slot not free
+            ;   fail  % Overlap - constraint not satisfiable
             )
         ),
         AllProofs
@@ -388,16 +388,19 @@ minutes_to_time(Total, Hour, Minute) :-
     Minute is Total mod 60.
 
 %% ============================================================================
-%% First-Order Logic: Interval Overlap Detection
+%% Declarative Constraint-Based Interval Overlap Detection
 %% ============================================================================
 %%
-%% Two intervals [S1, E1] and [S2, E2] overlap iff:
+%% Two intervals [S1, E1] and [S2, E2] overlap using CLP(FD) constraints:
 %% ∃t : (S1 ≤ t < E1) ∧ (S2 ≤ t < E2)
 %%
-%% This is equivalent to: S1 < E2 ∧ S2 < E1 (Resolution-based simplification)
+%% Declarative constraint form: S1 #< E2 ∧ S2 #< E1
 
 %% intervals_overlap(+Start1, +End1, +Start2, +End2)
-%% True if two time intervals overlap
+%% True if two time intervals overlap (declarative CLP(FD) constraint)
+intervals_overlap(Start1, End1, Start2, End2) :-
+    Start1 #< End2,
+    Start2 #< End1.
 %% Uses Resolution: ~(S1 >= E2 ∨ S2 >= E1) ≡ S1 < E2 ∧ S2 < E1
 intervals_overlap(Start1, End1, Start2, End2) :-
     Start1 < End2,
@@ -475,27 +478,26 @@ slot_is_free(Start, End, Events) :-
     \+ slot_conflicts_with_events(Start, End, Events).
 
 %% generate_candidate_slots(+MinStart, +MaxEnd, +Duration, +Step, -Slots)
-%% Generate all possible start times for slots of given duration
-%% Step is the granularity (e.g., 30 minutes)
+%% Generate slots using CLP(FD) - declarative constraint specification
+%% Instead of iterative generation, we declare what valid slots must satisfy
 generate_candidate_slots(MinStart, MaxEnd, Duration, Step, Slots) :-
-    MaxStart is MaxEnd - Duration,
+    MaxStart #= MaxEnd - Duration,
     findall(
         Start,
         (
-            between(0, 1000, N),  % Limit iterations
-            Start is MinStart + N * Step,
-            Start =< MaxStart
+            % Declarative constraint: Start must be in valid range
+            Start in MinStart..MaxStart,
+            % Declarative constraint: Start must be on step boundaries
+            (Start - MinStart) mod Step #= 0,
+            % Label to find concrete values
+            label([Start])
         ),
         Slots
     ).
 
 %% find_free_slots(+DurationMinutes, +Events, +MinStartH, +MinStartM, +MaxEndH, +MaxEndM, -FreeSlots)
-%% Find all free slots of given duration within time bounds
-%% Returns list of slot(StartH, StartM, EndH, EndM)
-%%
-%% This uses Constraint Solving:
-%% - Generate candidate slots
-%% - Filter by: ∀e ∈ Events: ¬overlaps(candidate, e)
+%% Find all free slots using CLP(FD) constraint satisfaction
+%% Declarative approach: state constraints, let the solver find solutions
 find_free_slots(DurationMinutes, Events, MinStartH, MinStartM, MaxEndH, MaxEndM, FreeSlots) :-
     time_to_minutes(MinStartH, MinStartM, MinStart),
     time_to_minutes(MaxEndH, MaxEndM, MaxEnd),
@@ -505,8 +507,10 @@ find_free_slots(DurationMinutes, Events, MinStartH, MinStartM, MaxEndH, MaxEndM,
         slot(SH, SM, EH, EM),
         (
             member(SlotStart, CandidateStarts),
-            SlotEnd is SlotStart + DurationMinutes,
-            SlotEnd =< MaxEnd,
+            % Declarative constraint: SlotEnd is determined by duration
+            SlotEnd #= SlotStart + DurationMinutes,
+            SlotEnd #=< MaxEnd,
+            % Constraint: slot must be free from conflicts
             slot_is_free(SlotStart, SlotEnd, Events),
             minutes_to_time(SlotStart, SH, SM),
             minutes_to_time(SlotEnd, EH, EM)

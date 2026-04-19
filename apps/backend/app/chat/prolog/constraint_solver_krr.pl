@@ -42,6 +42,8 @@
     logical_search/5            % logical_search(Goal, InitState, KB, Solution, Proof)
 ]).
 
+:- use_module(library(clpfd)).  % Constraint Logic Programming over Finite Domains
+
 :- use_module(scheduler, [
     time_to_minutes/3,
     minutes_to_time/3
@@ -250,7 +252,7 @@ satisfies_constraint_logic(
         AllProofs
     ).
 
-% WITHIN WORKING HOURS constraint (logical definition)
+% WITHIN WORKING HOURS constraint (declarative CLP(FD) definition)
 satisfies_constraint_logic(
     event(_, _, StartH, StartM, EndH, EndM, _, _),
     within_working_hours,
@@ -262,23 +264,25 @@ satisfies_constraint_logic(
     time_to_minutes(EndH, EndM, EndMin),
     time_to_minutes(MinH, MinM, MinMinutes),
     time_to_minutes(MaxH, MaxM, MaxMinutes),
-    StartMin >= MinMinutes,
-    EndMin =< MaxMinutes,
-    StartProof = proof(start_after(MinH, MinM), logical_comparison),
-    EndProof = proof(end_before(MaxH, MaxM), logical_comparison).
+    % Declarative constraints (not comparisons!)
+    StartMin #>= MinMinutes,
+    EndMin #=< MaxMinutes,
+    StartProof = proof(start_after(MinH, MinM), constraint_satisfaction),
+    EndProof = proof(end_before(MaxH, MaxM), constraint_satisfaction).
 
-% POSITIVE DURATION constraint (logical definition)
+% POSITIVE DURATION constraint (declarative CLP(FD) definition)
 satisfies_constraint_logic(
     event(_, _, StartH, StartM, EndH, EndM, _, _),
     positive_duration,
     _KB,
-    proof(positive_duration, derived)
+    proof(positive_duration, constraint_derived)
 ) :-
     time_to_minutes(StartH, StartM, StartMin),
     time_to_minutes(EndH, EndM, EndMin),
-    EndMin > StartMin.
+    % Declarative constraint: end must be strictly after start
+    EndMin #> StartMin.
 
-% RESPECTS PRIORITY constraint (logical inference)
+% RESPECTS PRIORITY constraint (declarative constraint inference)
 satisfies_constraint_logic(
     event(_, _, StartH, _, _, _, Priority, _),
     respects_priority,
@@ -286,8 +290,9 @@ satisfies_constraint_logic(
     proof(priority_satisfied, PreferenceProof)
 ) :-
     prove(priority_time_preference(Priority, PreferredStart, PreferredEnd), [], PreferenceProof),
-    StartH >= PreferredStart,
-    StartH =< PreferredEnd.
+    % Declarative constraints for time preferences
+    StartH #>= PreferredStart,
+    StartH #=< PreferredEnd.
 
 % Default: constraint satisfied if not violated
 satisfies_constraint_logic(Event, Constraint, KB, proof(not_violated, NegProof)) :-
@@ -315,32 +320,34 @@ violates_constraint_logic(
     S1 < E2,
     S2 < E1.
 
-% WORKING HOURS violation
+% WORKING HOURS violation (declarative constraint checking)
 violates_constraint_logic(
     event(_, _, StartH, StartM, EndH, EndM, _, _),
     within_working_hours,
     _KB,
-    proof(Violation, logical_check)
+    proof(Violation, constraint_violation)
 ) :-
     working_hours(MinH, MinM, MaxH, MaxM),
     time_to_minutes(StartH, StartM, StartMin),
     time_to_minutes(EndH, EndM, EndMin),
     time_to_minutes(MinH, MinM, MinMinutes),
     time_to_minutes(MaxH, MaxM, MaxMinutes),
-    (   StartMin < MinMinutes, Violation = starts_too_early(StartH, StartM)
-    ;   EndMin > MaxMinutes, Violation = ends_too_late(EndH, EndM)
+    % Declarative constraint: check which constraint is violated
+    (   StartMin #< MinMinutes, Violation = starts_too_early(StartH, StartM)
+    ;   EndMin #> MaxMinutes, Violation = ends_too_late(EndH, EndM)
     ).
 
-% POSITIVE DURATION violation
+% POSITIVE DURATION violation (declarative constraint checking)
 violates_constraint_logic(
     event(_, _, StartH, StartM, EndH, EndM, _, _),
     positive_duration,
     _KB,
-    proof(invalid_duration, logical_comparison)
+    proof(invalid_duration, constraint_violation)
 ) :-
     time_to_minutes(StartH, StartM, StartMin),
     time_to_minutes(EndH, EndM, EndMin),
-    EndMin =< StartMin.
+    % Declarative constraint: end must not be before or equal to start
+    EndMin #=< StartMin.
 
 %% ============================================================================
 %% SCHEDULE VALIDATION THROUGH LOGICAL INFERENCE
@@ -488,25 +495,27 @@ find_valid_slot(
     ].
 
 %% generate_candidate_slot(+MinStart, +MaxEnd, +Duration, -SH, -SM, -EH, -EM)
-%% Generates candidate time slots
+%% Generates candidate time slots using CLP(FD) constraints
+%% Declarative: we state what SlotStart must satisfy, not how to compute it
 generate_candidate_slot(MinStart, MaxEnd, Duration, SH, SM, EH, EM) :-
-    MaxSlotStart is MaxEnd - Duration,
-    between_step(MinStart, MaxSlotStart, 30, SlotStart),
-    SlotEnd is SlotStart + Duration,
-    SlotEnd =< MaxEnd,
+    % Declare constraint variables
+    SlotStart in MinStart..MaxEnd,
+    SlotEnd in MinStart..MaxEnd,
+    % Declare constraints (not calculations!)
+    SlotEnd #= SlotStart + Duration,
+    SlotEnd #=< MaxEnd,
+    SlotStart #>= MinStart,
+    % Constraint: slot starts on 30-minute boundaries (declarative scheduling grid)
+    SlotStart mod 30 #= 0,
+    % Label (find solution satisfying constraints)
+    label([SlotStart, SlotEnd]),
+    % Convert to time representation
     minutes_to_time(SlotStart, SH, SM),
     minutes_to_time(SlotEnd, EH, EM).
 
-between_step(Min, Max, Step, Value) :-
-    Min =< Max,
-    NumSteps is (Max - Min) // Step,
-    between(0, NumSteps, N),
-    Value is Min + N * Step,
-    Value =< Max.
-
 %% assess_slot_quality(+Event, +Type, +Priority, +KB, -Quality, -Justification)
-%% Logical assessment of slot quality (not arithmetic cost)
-%% Quality is a logical preference ordering (lower = better)
+%% Logical assessment of slot quality using declarative rules
+%% Quality is a logical preference ordering derived from constraint satisfaction
 assess_slot_quality(
     event(_, _, StartH, StartM, EndH, EndM, Priority, Type),
     Type,
@@ -517,28 +526,35 @@ assess_slot_quality(
 ) :-
     time_to_minutes(StartH, StartM, StartMin),
     time_to_minutes(EndH, EndM, EndMin),
-    findall(Reason, (
-        % Logical rule: high priority prefers peak hours
-        (   Priority >= 8,
-            StartMin >= 540,  % 9 AM
-            StartMin =< 1020, % 5 PM
-            Reason = satisfies(peak_hours_for_high_priority)
-        ;   Priority < 8,
-            Reason = satisfies(flexible_priority)
-        ),
-        % Logical rule: event type preferences
-        (   event_type_preference(Type, PrefSH, PrefSM, PrefEH, PrefEM),
-            time_to_minutes(PrefSH, PrefSM, PrefStart),
-            time_to_minutes(PrefEH, PrefEM, PrefEnd),
-            StartMin >= PrefStart,
-            EndMin =< PrefEnd,
-            Reason = satisfies(type_preference(Type))
-        ;   \+ event_type_preference(Type, _, _, _, _),
-            Reason = satisfies(no_type_constraint)
-        )
-    ), Reasons),
-    length(Reasons, NumSatisfied),
-    Quality is 100 - NumSatisfied * 10.  % Lower number = better quality
+    % Declarative constraint variables for quality assessment
+    PeakHourScore in 0..10,
+    TypePrefScore in 0..10,
+    
+    % Logical rules as constraints
+    (   Priority #>= 8,
+        StartMin #>= 540,  % 9 AM
+        StartMin #=< 1020  % 5 PM
+    ->  PeakHourScore = 10,
+        PeakReason = satisfies(peak_hours_for_high_priority)
+    ;   PeakHourScore = 0,
+        PeakReason = satisfies(flexible_priority)
+    ),
+    
+    % Event type preference as declarative constraint
+    (   event_type_preference(Type, PrefSH, PrefSM, PrefEH, PrefEM),
+        time_to_minutes(PrefSH, PrefSM, PrefStart),
+        time_to_minutes(PrefEH, PrefEM, PrefEnd),
+        StartMin #>= PrefStart,
+        EndMin #=< PrefEnd
+    ->  TypePrefScore = 10,
+        TypeReason = satisfies(type_preference(Type))
+    ;   TypePrefScore = 0,
+        TypeReason = satisfies(no_type_constraint)
+    ),
+    
+    % Declarative quality calculation
+    Quality #= 100 - (PeakHourScore + TypePrefScore),
+    Reasons = [PeakReason, TypeReason].
 
 %% ============================================================================
 %% QUERY INTERFACE: Ask Questions About Schedule
