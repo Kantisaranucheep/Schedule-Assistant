@@ -1,19 +1,28 @@
 %% apps/backend/app/chat/prolog/constraint_solver.pl
 %% ============================================================================
-%% Enhanced Constraint Solver with Priority-Based A* Rescheduling
+%% Enhanced Constraint Solver with KRR and Priority-Based A* Rescheduling
 %% ============================================================================
 %%
-%% Phase 2: Multi-constraint reasoning + heuristic cost + A* search
+%% This module implements Knowledge Representation and Reasoning for
+%% constraint-based schedule optimization. It is organized into:
 %%
-%% Concepts:
-%%   - Hard constraints: MUST be satisfied (time overlap, working hours)
-%%   - Soft constraints: SHOULD be satisfied (priority, preferences)
-%%   - g(n): Actual displacement cost (how much weve moved events)
-%%   - h(n): Priority loss heuristic (impact on high-priority events)
-%%   - A* search: Finds optimal rescheduling with f(n) = g(n) + h(n)
+%%   1. Constraint Knowledge Base — hard/soft constraints as FACTS
+%%   2. Constraint Reasoning     — inference over constraint declarations
+%%   3. Priority Knowledge       — event priority as domain knowledge
+%%   4. Cost Reasoning           — g(n), h(n), f(n) as inferred properties
+%%   5. Meta-Reasoning           — reason about which constraints to apply
+%%   6. Optimization Engine      — A* search (uses reasoning layer)
+%%   7. Legacy Predicates        — backward-compatible exports
+%%
+%% KRR Principles Applied:
+%%   - Constraints are DECLARED as facts, not embedded in code
+%%   - Priority is KNOWLEDGE, not a computed parameter
+%%   - The meta-reasoner selects which rules/constraints apply
+%%   - The optimizer QUERIES the knowledge base, not procedural checks
 %% ============================================================================
 
 :- module(constraint_solver, [
+    %% --- Legacy exports (backward compatible) ---
     validate_hard_constraints/3,
     calculate_soft_cost/4,
     calculate_displacement_cost/3,
@@ -23,7 +32,19 @@
     reschedule_event/8,
     find_optimal_schedule/6,
     detect_chain_conflicts/4,
-    suggest_reschedule_options/7
+    suggest_reschedule_options/7,
+
+    %% --- KRR Exports ---
+    hard_constraint/1,             % hard_constraint(Name) — declared fact
+    soft_constraint/2,             % soft_constraint(Name, Weight) — declared fact
+    constraint_satisfied/3,        % constraint_satisfied(Name, Event, Context) — inference
+    all_hard_constraints_met/2,    % all_hard_constraints_met(Event, Context) — inference
+    soft_cost_for/4,               % soft_cost_for(Name, Event, Context, Cost) — inference
+    total_soft_cost/4,             % total_soft_cost(Event, Context, Prefs, Cost) — inference
+    priority_knowledge/2,          % priority_knowledge(Level, Weight) — fact
+    event_priority_class/3,        % event_priority_class(Priority, Class, Description) — fact
+    reason_about_constraint/3,     % reason_about_constraint(Event, Context, Verdict) — meta
+    demo/1                         % demo(Goal) — meta-interpreter
 ]).
 
 :- use_module(scheduler, [
@@ -34,126 +55,279 @@
 ]).
 
 %% ============================================================================
-%% HARD CONSTRAINTS — Must be satisfied, no exceptions
+%% 1. Constraint Knowledge Base — Declared as Facts
+%% ============================================================================
+%%
+%% Hard constraints MUST be satisfied; soft constraints SHOULD be minimized.
+%% Each is a FACT in the knowledge base, not embedded logic.
+
+:- dynamic hard_constraint/1.
+:- dynamic soft_constraint/2.
+
+%% --- Hard Constraints (must hold, no exceptions) ---
+hard_constraint(no_time_overlap).
+hard_constraint(within_working_hours).
+hard_constraint(positive_duration).
+
+%% --- Soft Constraints (preferences, with penalty weights) ---
+soft_constraint(preferred_time_window, 5).    % Penalty for suboptimal time
+soft_constraint(buffer_proximity, 3).         % Penalty for insufficient buffer
+soft_constraint(daily_overload, 4).           % Penalty for too many events
+soft_constraint(priority_scheduling, 2).      % Penalty for priority mismatch
+
+%% ============================================================================
+%% 2. Priority Knowledge — Domain Expertise as Facts
 %% ============================================================================
 
-%% validate_hard_constraints(+Event, +AllEvents, -Violations)
-%% Returns a list of hard constraint violations. Empty list = valid.
+%% Priority levels and their numeric weights (domain knowledge)
+priority_knowledge(critical, 10).
+priority_knowledge(high, 8).
+priority_knowledge(medium, 5).
+priority_knowledge(low, 3).
+priority_knowledge(optional, 1).
+
+%% Classification rules: what priority level means
+event_priority_class(P, critical, 'Must not be moved or displaced') :- P >= 9.
+event_priority_class(P, high, 'Prefer not to move; high displacement cost') :- P >= 7, P < 9.
+event_priority_class(P, medium, 'Can be moved with moderate cost') :- P >= 4, P < 7.
+event_priority_class(P, low, 'Easy to move; minimal cost') :- P >= 2, P < 4.
+event_priority_class(P, optional, 'Can be freely rescheduled') :- P < 2.
+
+%% Strategy weights (how much to weigh priority loss by strategy)
+strategy_weight(minimize_moves, 0.5).
+strategy_weight(maximize_quality, 2.0).
+strategy_weight(balanced, 1.0).
+
+%% ============================================================================
+%% 3. Constraint Reasoning — Inference Over Declarations
+%% ============================================================================
 %%
-%% Hard constraints:
-%%   1. No time overlap with other events
-%%   2. Within working hours (default 6:00-23:00)
-%%   3. End time must be after start time
-%%   4. Event duration must be positive
+%% constraint_satisfied(+ConstraintName, +Event, +Context)
+%% Infers whether a named constraint holds for an event in a context.
+%% The event and context are passed as structured terms.
+
+%% Hard constraint: no overlap with other events
+constraint_satisfied(no_time_overlap,
+    event(Id, _Title, StartH, StartM, EndH, EndM, _Priority, _Type),
+    context(AllEvents)
+) :-
+    time_to_minutes(StartH, StartM, StartMin),
+    time_to_minutes(EndH, EndM, EndMin),
+    \+ (
+        member(event(OtherId, _, OSH, OSM, OEH, OEM, _, _), AllEvents),
+        OtherId \= Id,
+        time_to_minutes(OSH, OSM, OStart),
+        time_to_minutes(OEH, OEM, OEnd),
+        OStart < EndMin,
+        StartMin < OEnd
+    ).
+
+%% Hard constraint: within working hours (6:00–23:00)
+constraint_satisfied(within_working_hours,
+    event(_Id, _Title, StartH, StartM, EndH, EndM, _Priority, _Type),
+    _Context
+) :-
+    time_to_minutes(StartH, StartM, StartMin),
+    time_to_minutes(EndH, EndM, EndMin),
+    StartMin >= 360,   % >= 6:00 AM
+    EndMin =< 1380.    % <= 23:00
+
+%% Hard constraint: positive duration
+constraint_satisfied(positive_duration,
+    event(_Id, _Title, StartH, StartM, EndH, EndM, _Priority, _Type),
+    _Context
+) :-
+    time_to_minutes(StartH, StartM, StartMin),
+    time_to_minutes(EndH, EndM, EndMin),
+    EndMin > StartMin.
+
+%% all_hard_constraints_met(+Event, +Context)
+%% Inference: ALL declared hard constraints must be satisfied.
+all_hard_constraints_met(Event, Context) :-
+    forall(
+        hard_constraint(C),
+        constraint_satisfied(C, Event, Context)
+    ).
+
+%% ============================================================================
+%% 4. Soft Cost Reasoning — Infer Penalty from Knowledge
+%% ============================================================================
+
+%% soft_cost_for(+ConstraintName, +Event, +Context, -Cost)
+%% Infer the penalty cost for violating a named soft constraint.
+
+soft_cost_for(preferred_time_window,
+    event(_Id, _Title, StartH, StartM, _EndH, _EndM, _Priority, Type),
+    _Context, Cost
+) :-
+    time_to_minutes(StartH, StartM, StartMin),
+    preferred_time_cost_for_type(Type, StartMin, Cost).
+
+soft_cost_for(buffer_proximity,
+    event(_Id, _Title, StartH, StartM, EndH, EndM, _Priority, _Type),
+    context(AllEvents), Cost
+) :-
+    time_to_minutes(StartH, StartM, StartMin),
+    time_to_minutes(EndH, EndM, EndMin),
+    buffer_proximity_cost(StartMin, EndMin, AllEvents, Cost).
+
+soft_cost_for(daily_overload, _Event, context(AllEvents), Cost) :-
+    daily_overload_cost(AllEvents, Cost).
+
+soft_cost_for(priority_scheduling,
+    event(_Id, _Title, StartH, StartM, _EndH, _EndM, Priority, _Type),
+    _Context, Cost
+) :-
+    time_to_minutes(StartH, StartM, StartMin),
+    priority_scheduling_cost(Priority, StartMin, Cost).
+
+%% total_soft_cost(+Event, +Context, +Preferences, -TotalCost)
+%% Sum of all soft constraint penalties, weighted by declaration.
+total_soft_cost(Event, Context, _Preferences, TotalCost) :-
+    findall(
+        WeightedCost,
+        (
+            soft_constraint(Name, Weight),
+            soft_cost_for(Name, Event, Context, RawCost),
+            WeightedCost is RawCost * Weight / 5  % normalize by default weight
+        ),
+        Costs
+    ),
+    sum_list(Costs, TotalCost).
+
+%% ============================================================================
+%% 5. Meta-Reasoning — Reason About Constraint Application
+%% ============================================================================
+%%
+%% reason_about_constraint(+Event, +Context, -Verdict)
+%% The meta-reasoner examines all constraints and produces a verdict:
+%%   verdict(HardViolations, SoftCost, Recommendation)
+
+reason_about_constraint(Event, Context, verdict(HardViolations, SoftCost, Recommendation)) :-
+    %% Check which hard constraints are violated
+    findall(
+        violated(C),
+        (hard_constraint(C), \+ constraint_satisfied(C, Event, Context)),
+        HardViolations
+    ),
+    %% Calculate total soft cost
+    total_soft_cost(Event, Context, [], SoftCost),
+    %% Infer recommendation
+    (   HardViolations = []
+    ->  (   SoftCost < 5
+        ->  Recommendation = accept
+        ;   Recommendation = accept_with_warning
+        )
+    ;   Recommendation = reject
+    ).
+
+%% demo/1: Meta-interpreter for constraint reasoning
+demo(true) :- !.
+demo((A, B)) :- !, demo(A), demo(B).
+demo((A ; B)) :- !, (demo(A) ; demo(B)).
+demo(\+ A) :- !, \+ demo(A).
+
+demo(constraint_satisfied(C, E, Ctx)) :- constraint_satisfied(C, E, Ctx).
+demo(all_hard_constraints_met(E, Ctx)) :- all_hard_constraints_met(E, Ctx).
+demo(reason_about_constraint(E, Ctx, V)) :- reason_about_constraint(E, Ctx, V).
+demo(hard_constraint(C)) :- hard_constraint(C).
+demo(soft_constraint(C, W)) :- soft_constraint(C, W).
+demo(priority_knowledge(L, W)) :- priority_knowledge(L, W).
+demo(event_priority_class(P, C, D)) :- event_priority_class(P, C, D).
+
+%% ============================================================================
+%% 6. Legacy Predicates (Backward Compatible)
+%% ============================================================================
+%%
+%% These preserve the original API. They now delegate to the KRR layer
+%% for constraint checking where applicable.
+
+%% validate_hard_constraints — now uses constraint_satisfied inference
 validate_hard_constraints(
     event(Id, _Title, StartH, StartM, EndH, EndM, _Priority, _Type),
     AllEvents,
     Violations
 ) :-
-    time_to_minutes(StartH, StartM, StartMin),
-    time_to_minutes(EndH, EndM, EndMin),
+    Event = event(Id, _Title, StartH, StartM, EndH, EndM, _Priority, _Type),
+    Context = context(AllEvents),
     findall(Violation, (
-        % Check 1: Time overlap with other events
-        (   member(event(OtherId, OtherTitle, OSH, OSM, OEH, OEM, _, _), AllEvents),
+        %% Check each hard constraint via inference
+        (   hard_constraint(no_time_overlap),
+            \+ constraint_satisfied(no_time_overlap, Event, Context),
+            member(event(OtherId, OtherTitle, OSH, OSM, OEH, OEM, _, _), AllEvents),
             OtherId \= Id,
             time_to_minutes(OSH, OSM, OStart),
             time_to_minutes(OEH, OEM, OEnd),
+            time_to_minutes(StartH, StartM, StartMin),
+            time_to_minutes(EndH, EndM, EndMin),
             OStart < EndMin,
             StartMin < OEnd,
             Violation = overlap(OtherId, OtherTitle)
         )
         ;
-        % Check 2: Outside working hours
-        (   StartMin < 360,  % Before 6:00 AM
+        (   \+ constraint_satisfied(within_working_hours, Event, Context),
+            time_to_minutes(StartH, StartM, SM),
+            SM < 360,
             Violation = before_working_hours
         )
         ;
-        (   EndMin > 1380,   % After 23:00
+        (   \+ constraint_satisfied(within_working_hours, Event, Context),
+            time_to_minutes(EndH, EndM, EM2),
+            EM2 > 1380,
             Violation = after_working_hours
         )
         ;
-        % Check 3: Invalid duration
-        (   EndMin =< StartMin,
+        (   \+ constraint_satisfied(positive_duration, Event, Context),
             Violation = invalid_duration
         )
     ), Violations).
 
-%% ============================================================================
-%% SOFT CONSTRAINTS — Preferences with penalty costs
-%% ============================================================================
-
-%% calculate_soft_cost(+Event, +AllEvents, +Preferences, -TotalCost)
-%% Calculates total soft constraint violation cost.
-%%
-%% Soft constraint types with costs:
-%%   - Preferred time violation: penalty based on distance from preferred slot
-%%   - Priority displacement: cost of moving a high-priority event
-%%   - Proximity penalty: events too close together (no buffer)
-%%   - Daily overload: too many events on one day
+%% calculate_soft_cost — now delegates to total_soft_cost inference
 calculate_soft_cost(
-    event(_Id, _Title, StartH, StartM, EndH, EndM, Priority, Type),
+    event(Id, Title, StartH, StartM, EndH, EndM, Priority, Type),
     AllEvents,
     Preferences,
     TotalCost
 ) :-
-    time_to_minutes(StartH, StartM, StartMin),
-    time_to_minutes(EndH, EndM, EndMin),
+    Event = event(Id, Title, StartH, StartM, EndH, EndM, Priority, Type),
+    Context = context(AllEvents),
+    total_soft_cost(Event, Context, Preferences, TotalCost).
 
-    % Cost 1: Preferred time penalty
-    preferred_time_cost(Type, StartMin, EndMin, Preferences, TimeCost),
-
-    % Cost 2: Buffer proximity penalty
-    buffer_proximity_cost(StartMin, EndMin, AllEvents, BufferCost),
-
-    % Cost 3: Daily overload penalty
-    daily_overload_cost(AllEvents, OverloadCost),
-
-    % Cost 4: Priority-appropriate scheduling
-    priority_scheduling_cost(Priority, StartMin, PriorityCost),
-
-    TotalCost is TimeCost + BufferCost + OverloadCost + PriorityCost.
-
-%% preferred_time_cost(+Type, +StartMin, +EndMin, +Preferences, -Cost)
-%% Penalty for scheduling events outside their preferred time windows
-preferred_time_cost(meeting, StartMin, _EndMin, _Prefs, Cost) :-
-    % Meetings preferred 9:00-17:00
+%% Preferred time cost per event type (knowledge)
+preferred_time_cost_for_type(meeting, StartMin, Cost) :-
     (   StartMin >= 540, StartMin =< 1020
     ->  Cost = 0
     ;   Diff is abs(StartMin - 540),
         Cost is min(Diff // 30, 10)
     ).
-preferred_time_cost(study, StartMin, _EndMin, _Prefs, Cost) :-
-    % Study preferred 8:00-12:00 or 14:00-18:00
+preferred_time_cost_for_type(study, StartMin, Cost) :-
     (   (StartMin >= 480, StartMin =< 720)
     ;   (StartMin >= 840, StartMin =< 1080)
     ->  Cost = 0
     ;   Cost = 5
     ).
-preferred_time_cost(exercise, StartMin, _EndMin, _Prefs, Cost) :-
-    % Exercise preferred early morning or evening
-    (   StartMin =< 480   % Before 8am
-    ;   StartMin >= 1020  % After 5pm
+preferred_time_cost_for_type(exercise, StartMin, Cost) :-
+    (   StartMin =< 480
+    ;   StartMin >= 1020
     ->  Cost = 0
     ;   Cost = 3
     ).
-preferred_time_cost(_, _, _, _, 0).  % Default: no preference penalty
+preferred_time_cost_for_type(_, _, 0).
 
-%% buffer_proximity_cost(+StartMin, +EndMin, +AllEvents, -Cost)
-%% Penalty if events are too close together (< 15 min buffer)
+%% Buffer proximity cost
 buffer_proximity_cost(StartMin, EndMin, AllEvents, Cost) :-
     findall(1, (
         member(event(_, _, OSH, OSM, OEH, OEM, _, _), AllEvents),
         time_to_minutes(OSH, OSM, OStart),
         time_to_minutes(OEH, OEM, OEnd),
-        (   (OEnd > StartMin - 15, OEnd =< StartMin) % Event ends < 15min before
-        ;   (OStart >= EndMin, OStart < EndMin + 15)  % Event starts < 15min after
+        (   (OEnd > StartMin - 15, OEnd =< StartMin)
+        ;   (OStart >= EndMin, OStart < EndMin + 15)
         )
     ), CloseEvents),
     length(CloseEvents, NumClose),
     Cost is NumClose * 3.
 
-%% daily_overload_cost(+AllEvents, -Cost)
-%% Penalty for having too many events in one day (more than 6)
+%% Daily overload cost
 daily_overload_cost(AllEvents, Cost) :-
     length(AllEvents, NumEvents),
     (   NumEvents > 8
@@ -163,11 +337,9 @@ daily_overload_cost(AllEvents, Cost) :-
     ;   Cost = 0
     ).
 
-%% priority_scheduling_cost(+Priority, +StartMin, -Cost)
-%% High-priority events scheduled at suboptimal times get penalized
+%% Priority scheduling cost
 priority_scheduling_cost(Priority, StartMin, Cost) :-
     Priority >= 8,
-    % Critical events should be in peak hours (9am-5pm)
     (   StartMin >= 540, StartMin =< 1020
     ->  Cost = 0
     ;   Cost is (Priority - 7) * 3
@@ -179,68 +351,43 @@ priority_scheduling_cost(_, _, 0).
 %% g(n) — DISPLACEMENT COST (Actual cost of moves made)
 %% ============================================================================
 
-%% calculate_displacement_cost(+OriginalEvents, +ModifiedEvents, -GCost)
-%% Measures how much events have been moved from their original positions.
-%%
-%% g(n) = Σ for each moved event:
-%%   move_penalty(3) + hours_shifted × shift_weight(2) + priority × priority_factor
 calculate_displacement_cost(OriginalEvents, ModifiedEvents, GCost) :-
     findall(EventCost, (
         member(event(Id, _, OSH, OSM, OEH, OEM, Priority, _), OriginalEvents),
         member(event(Id, _, NSH, NSM, NEH, NEM, _, _), ModifiedEvents),
-        % Check if event was moved
         time_to_minutes(OSH, OSM, OldStart),
         time_to_minutes(OEH, OEM, OldEnd),
         time_to_minutes(NSH, NSM, NewStart),
         time_to_minutes(NEH, NEM, NewEnd),
         (   (OldStart =\= NewStart ; OldEnd =\= NewEnd)
-        ->  % Event was moved
-            Shift is abs(NewStart - OldStart),
+        ->  Shift is abs(NewStart - OldStart),
             ShiftHours is Shift / 60.0,
             MovePenalty = 3,
             ShiftCost is ShiftHours * 2,
             PriorityPenalty is Priority * 0.5,
             EventCost is MovePenalty + ShiftCost + PriorityPenalty
-        ;   EventCost = 0  % Not moved
+        ;   EventCost = 0
         )
     ), Costs),
     sum_list(Costs, GCost).
 
 %% ============================================================================
-%% h(n) — PRIORITY LOSS HEURISTIC (Estimated future cost)
+%% h(n) — PRIORITY LOSS HEURISTIC
 %% ============================================================================
 
-%% calculate_priority_loss(+ConflictingEvents, +Strategy, +Priorities, -HCost)
-%% Estimates the cost of remaining conflicts that need resolution.
-%%
-%% h(n) = Σ for each remaining conflict:
-%%   priority_weight × conflict_severity
-%%
-%% Strategy affects weights:
-%%   minimize_moves: lower h(n) weight, prefer fewer moves
-%%   maximize_quality: higher h(n) weight, protect high-priority
-%%   balanced: equal weights
 calculate_priority_loss(ConflictingEvents, Strategy, _Priorities, HCost) :-
     strategy_weight(Strategy, StratWeight),
     findall(EventHCost, (
         member(event(_Id, _Title, _SH, _SM, _EH, _EM, Priority, _Type), ConflictingEvents),
-        ConflictSeverity is Priority * Priority,  % Quadratic penalty for high priority
+        ConflictSeverity is Priority * Priority,
         EventHCost is ConflictSeverity * StratWeight
     ), HCosts),
     sum_list(HCosts, HCost).
-
-%% strategy_weight(+Strategy, -Weight)
-%% How much to weigh priority loss based on users strategy
-strategy_weight(minimize_moves, 0.5).     % Prefer fewer moves
-strategy_weight(maximize_quality, 2.0).   % Protect high-priority events
-strategy_weight(balanced, 1.0).           % Equal balance
 
 %% ============================================================================
 %% f(n) = g(n) + h(n) — COMBINED HEURISTIC
 %% ============================================================================
 
-%% calculate_heuristic(+OriginalEvents, +CurrentState, +RemainingConflicts, +Strategy, -FScore)
-%% The A* evaluation function.
 calculate_heuristic(OriginalEvents, CurrentState, RemainingConflicts, Strategy, FScore) :-
     calculate_displacement_cost(OriginalEvents, CurrentState, GCost),
     calculate_priority_loss(RemainingConflicts, Strategy, [], HCost),
@@ -250,9 +397,6 @@ calculate_heuristic(OriginalEvents, CurrentState, RemainingConflicts, Strategy, 
 %% SLOT FINDING with Priority Awareness
 %% ============================================================================
 
-%% find_best_slot(+EventToMove, +AllEvents, +MinStartH, +MinStartM, +MaxEndH, +MaxEndM, -BestSlot)
-%% Find the best available slot for an event, considering priority.
-%% Returns slot(StartH, StartM, EndH, EndM, Cost)
 find_best_slot(
     event(Id, Title, _SH, _SM, _EH, _EM, Priority, Type),
     AllEvents,
@@ -264,9 +408,7 @@ find_best_slot(
     Duration is OrigEnd - OrigStart,
     time_to_minutes(MinStartH, MinStartM, MinStart),
     time_to_minutes(MaxEndH, MaxEndM, MaxEnd),
-    % Remove the event being moved from the list
     exclude(event_has_id(Id), AllEvents, OtherEvents),
-    % Generate candidate slots (30-min granularity)
     Step = 30,
     MaxStart is MaxEnd - Duration,
     findall(
@@ -277,17 +419,14 @@ find_best_slot(
             SlotStart =< MaxStart,
             SlotEnd is SlotStart + Duration,
             SlotEnd =< MaxEnd,
-            % Check no overlap with other events
             \+ slot_conflicts_with_any(SlotStart, SlotEnd, OtherEvents),
-            % Calculate score: distance from original + soft cost
             Displacement is abs(SlotStart - OrigStart),
             DisplacementCost is Displacement / 60.0 * 2,
             minutes_to_time(SlotStart, SlotSH, SlotSM),
             minutes_to_time(SlotEnd, SlotEH, SlotEM),
-            calculate_soft_cost(
-                event(Id, Title, SlotSH, SlotSM, SlotEH, SlotEM, Priority, Type),
-                OtherEvents, [], SoftCost
-            ),
+            %% Use KRR soft cost inference
+            CandidateEvent = event(Id, Title, SlotSH, SlotSM, SlotEH, SlotEM, Priority, Type),
+            total_soft_cost(CandidateEvent, context(OtherEvents), [], SoftCost),
             Score is DisplacementCost + SoftCost
         ),
         ScoredSlots
@@ -312,13 +451,6 @@ slot_conflicts_with_any(Start, End, Events) :-
 %% A* RESCHEDULING — Find optimal schedule
 %% ============================================================================
 
-%% reschedule_event(+NewEvent, +ExistingEvents, +Strategy, +MinH, +MinM, +MaxH, +MaxM, -Result)
-%% When adding a new event that conflicts, find the optimal rescheduling.
-%%
-%% Returns: result(Action, MovedEvents, TotalCost)
-%%   Action: place_new (place new event, move others)
-%%         | move_new (move the new event to a free slot)
-%%         | no_solution
 reschedule_event(
     event(NewId, NewTitle, NSH, NSM, NEH, NEM, NewPriority, NewType),
     ExistingEvents,
@@ -328,7 +460,6 @@ reschedule_event(
 ) :-
     time_to_minutes(NSH, NSM, NewStart),
     time_to_minutes(NEH, NEM, NewEnd),
-    % Find conflicting events
     findall(
         event(EId, ETitle, ESH, ESM, EEH, EEM, EPri, EType),
         (
@@ -341,10 +472,8 @@ reschedule_event(
         ConflictingEvents
     ),
     (   ConflictingEvents = []
-    ->  % No conflicts, just place the event
-        Result = result(no_conflict, [], 0)
+    ->  Result = result(no_conflict, [], 0)
     ;
-        % Strategy 1: Move the NEW event to a free slot
         NewEvent = event(NewId, NewTitle, NSH, NSM, NEH, NEM, NewPriority, NewType),
         (   find_best_slot(NewEvent, ExistingEvents, MinH, MinM, MaxH, MaxM, NewSlot)
         ->  NewSlot = slot(SlotSH, SlotSM, SlotEH, SlotEM, MoveCost1)
@@ -352,7 +481,6 @@ reschedule_event(
         ),
         Option1Cost is MoveCost1 + NewPriority * 0.5,
 
-        % Strategy 2: Keep new event, move conflicting events
         try_move_conflicts(
             ConflictingEvents, ExistingEvents, NewEvent,
             MinH, MinM, MaxH, MaxM,
@@ -364,7 +492,6 @@ reschedule_event(
             Option2Cost is MoveCost2 + PLoss
         ),
 
-        % Pick best option based on strategy
         pick_best_option(
             Strategy, NewPriority,
             option(move_new, slot(SlotSH, SlotSM, SlotEH, SlotEM), Option1Cost),
@@ -373,8 +500,6 @@ reschedule_event(
         )
     ).
 
-%% try_move_conflicts(+Conflicts, +AllEvents, +NewEvent, +Bounds, -Moved, -Cost)
-%% Try to relocate all conflicting events to new slots
 try_move_conflicts([], _AllEvents, _NewEvent, _MinH, _MinM, _MaxH, _MaxM, [], 0).
 try_move_conflicts(
     [Event|Rest], AllEvents, NewEvent,
@@ -383,39 +508,31 @@ try_move_conflicts(
     TotalCost
 ) :-
     Event = event(Id, _Title, OSH, OSM, OEH, OEM, _Pri, _Type),
-    % Build updated event list (with new event added, this event removed)
     exclude(event_has_id(Id), AllEvents, WithoutThis),
     append([NewEvent], WithoutThis, UpdatedEvents),
-    % Find a new slot for this conflicting event
     find_best_slot(Event, UpdatedEvents, MinH, MinM, MaxH, MaxM, Slot),
     Slot = slot(NSH2, NSM2, NEH2, NEM2, SlotCost),
-    % Recurse for remaining conflicts
     try_move_conflicts(Rest, AllEvents, NewEvent, MinH, MinM, MaxH, MaxM, RestMoved, RestCost),
     TotalCost is SlotCost + RestCost.
 try_move_conflicts(_, _, _, _, _, _, _, failed, 9999).
 
-%% pick_best_option(+Strategy, +NewPriority, +Option1, +Option2, -Result)
-%% Choose between moving the new event vs moving existing events
 pick_best_option(
     Strategy, NewPriority,
     option(move_new, Slot, Cost1),
     option(place_new, MovedEvents, Cost2),
     Result
 ) :-
-    % Apply strategy weighting
     (   Strategy = minimize_moves
-    ->  AdjCost1 is Cost1 * 0.7,   % Favor moving just the new event
+    ->  AdjCost1 is Cost1 * 0.7,
         AdjCost2 is Cost2 * 1.3
     ;   Strategy = maximize_quality
-    ->  % Favor protecting highest-priority event
-        (   NewPriority >= 8
-        ->  AdjCost1 is Cost1 * 2.0,  % Dont want to move high-priority new event
+    ->  (   NewPriority >= 8
+        ->  AdjCost1 is Cost1 * 2.0,
             AdjCost2 is Cost2 * 0.5
         ;   AdjCost1 is Cost1 * 0.5,
             AdjCost2 is Cost2 * 1.5
         )
-    ;   % balanced
-        AdjCost1 is Cost1,
+    ;   AdjCost1 is Cost1,
         AdjCost2 is Cost2
     ),
     (   AdjCost1 =< AdjCost2, Cost1 < 9999
@@ -433,33 +550,23 @@ pick_best_option(
 %% FULL A* SCHEDULE OPTIMIZATION
 %% ============================================================================
 
-%% find_optimal_schedule(+Events, +NewEvent, +Strategy, +MinMax, +MaxDepth, -Solution)
-%% A* search through possible schedule states to find the optimal arrangement.
-%%
-%% State: schedule(Events, Cost, Moves)
-%% Goal: No hard constraint violations
 find_optimal_schedule(Events, NewEvent, Strategy, bounds(MinH, MinM, MaxH, MaxM), MaxDepth, Solution) :-
     NewEvent = event(_, _, _, _, _, _, _, _),
-    % Initial state: add new event to schedule
     append([NewEvent], Events, InitialEvents),
-    % Check for conflicts
     find_all_conflicts(InitialEvents, Conflicts),
     (   Conflicts = []
     ->  Solution = solution(InitialEvents, 0, [])
-    ;   % Run A* search
-        InitialState = state(InitialEvents, Events, 0, [], Conflicts),
+    ;   InitialState = state(InitialEvents, Events, 0, [], Conflicts),
         astar_search([InitialState], [], Strategy, bounds(MinH, MinM, MaxH, MaxM), MaxDepth, Solution)
     ).
 
-%% find_all_conflicts(+Events, -ConflictPairs)
-%% Find all pairs of overlapping events
 find_all_conflicts(Events, ConflictPairs) :-
     findall(
         conflict(Id1, Id2),
         (
             member(event(Id1, _, S1H, S1M, E1H, E1M, _, _), Events),
             member(event(Id2, _, S2H, S2M, E2H, E2M, _, _), Events),
-            Id1 @< Id2,  % Avoid duplicates
+            Id1 @< Id2,
             time_to_minutes(S1H, S1M, S1),
             time_to_minutes(E1H, E1M, E1),
             time_to_minutes(S2H, S2M, S2),
@@ -470,52 +577,39 @@ find_all_conflicts(Events, ConflictPairs) :-
         ConflictPairs
     ).
 
-%% astar_search(+OpenList, +ClosedList, +Strategy, +Bounds, +MaxDepth, -Solution)
-%% A* search implementation
 astar_search([], _Closed, _Strategy, _Bounds, _MaxDepth,
     solution([], 9999, [no_solution])) :- !.
 
 astar_search(Open, _Closed, _Strategy, _Bounds, 0,
     solution(BestEvents, BestCost, BestMoves)) :-
-    % Max depth reached, return best state found
     sort_states_by_cost(Open, [state(BestEvents, _, BestCost, BestMoves, _)|_]), !.
 
 astar_search(Open, Closed, Strategy, Bounds, MaxDepth, Solution) :-
-    % Pick state with lowest f-score
     sort_states_by_cost(Open, [Current|RestOpen]),
     Current = state(Events, OrigEvents, CurrentCost, Moves, Conflicts),
     (   Conflicts = []
-    ->  % Goal reached: no conflicts
-        Solution = solution(Events, CurrentCost, Moves)
+    ->  Solution = solution(Events, CurrentCost, Moves)
     ;
-        % Expand: try to resolve each conflict
         Bounds = bounds(MinH, MinM, MaxH, MaxM),
         NewDepth is MaxDepth - 1,
         findall(NextState, (
             member(conflict(Id1, Id2), Conflicts),
-            % Try moving one of the conflicting events
             (   MovedId = Id1 ; MovedId = Id2 ),
             member(MovedEvent, Events),
             MovedEvent = event(MovedId, _, _, _, _, _, _, _),
             find_best_slot(MovedEvent, Events, MinH, MinM, MaxH, MaxM, Slot),
             Slot = slot(NSH, NSM, NEH, NEM, SlotCost),
-            % Apply the move
             replace_event_time(Events, MovedId, NSH, NSM, NEH, NEM, NewEvents),
-            % Calculate new cost
             NewCost is CurrentCost + SlotCost,
-            % Check remaining conflicts
             find_all_conflicts(NewEvents, NewConflicts),
-            % Build new state
             NewMoves = [move(MovedId, NSH, NSM, NEH, NEM)|Moves],
             NextState = state(NewEvents, OrigEvents, NewCost, NewMoves, NewConflicts),
-            % Not in closed list
             \+ member(NextState, Closed)
         ), NewStates),
         append(RestOpen, NewStates, AllOpen),
         astar_search(AllOpen, [Current|Closed], Strategy, Bounds, NewDepth, Solution)
     ).
 
-%% sort_states_by_cost(+States, -SortedStates)
 sort_states_by_cost(States, Sorted) :-
     map_list_to_pairs(state_cost, States, Pairs),
     keysort(Pairs, SortedPairs),
@@ -523,7 +617,6 @@ sort_states_by_cost(States, Sorted) :-
 
 state_cost(state(_, _, Cost, _, _), Cost).
 
-%% replace_event_time(+Events, +Id, +NewSH, +NewSM, +NewEH, +NewEM, -Updated)
 replace_event_time([], _, _, _, _, _, []).
 replace_event_time(
     [event(Id, Title, _SH, _SM, _EH, _EM, Pri, Type)|Rest],
@@ -538,8 +631,6 @@ replace_event_time([E|Rest], Id, NSH, NSM, NEH, NEM, [E|RestUpdated]) :-
 %% CHAIN CONFLICT DETECTION
 %% ============================================================================
 
-%% detect_chain_conflicts(+MovedEventId, +NewStart, +NewEnd, +AllEvents, -ChainConflicts)
-%% If we move event A, check if it creates new conflicts with B, C, etc.
 detect_chain_conflicts(MovedId, NewSH, NewSM, NewEH, NewEM, AllEvents, ChainConflicts) :-
     time_to_minutes(NewSH, NewSM, NewStart),
     time_to_minutes(NewEH, NewEM, NewEnd),
@@ -560,9 +651,6 @@ detect_chain_conflicts(MovedId, NewSH, NewSM, NewEH, NewEM, AllEvents, ChainConf
 %% USER-FACING SUGGESTIONS
 %% ============================================================================
 
-%% suggest_reschedule_options(+NewEvent, +ExistingEvents, +Strategy, +MinH, +MinM, +MaxH, +MaxM, -Options)
-%% Generate multiple rescheduling options for the user to choose from.
-%% Returns up to 3 options sorted by cost.
 suggest_reschedule_options(
     event(NewId, NewTitle, NSH, NSM, NEH, NEM, NewPri, NewType),
     ExistingEvents,
@@ -575,7 +663,6 @@ suggest_reschedule_options(
     time_to_minutes(NEH, NEM, NewEnd),
     Duration is NewEnd - NewStart,
 
-    % Find conflicting events
     findall(
         event(EId, ETitle, ESH, ESM, EEH, EEM, EPri, EType),
         (
@@ -591,7 +678,6 @@ suggest_reschedule_options(
     (   Conflicts = []
     ->  Options = [option(no_conflict, [], 0, 'No conflicts detected')]
     ;
-        % Option A: Move new event to nearest free slot
         findall(
             option(move_new, [moved_to(SH, SM, EH, EM)], Score, Description),
             (
@@ -601,7 +687,6 @@ suggest_reschedule_options(
             OptionAs
         ),
 
-        % Option B: Move each conflicting event
         findall(
             option(move_existing, MovedList, TotalCost, Description),
             (
@@ -617,13 +702,11 @@ suggest_reschedule_options(
             OptionBs
         ),
 
-        % Combine and sort all options
         append(OptionAs, OptionBs, AllOptions),
         sort_options(AllOptions, SortedOptions),
         take_n(3, SortedOptions, Options)
     ).
 
-%% find_near_slot: find free slots near the original time
 find_near_slot(OrigStart, Duration, Events, MinH, MinM, MaxH, MaxM, SH, SM, EH, EM, Score) :-
     time_to_minutes(MinH, MinM, MinStart),
     time_to_minutes(MaxH, MaxM, MaxEnd),
@@ -640,7 +723,6 @@ find_near_slot(OrigStart, Duration, Events, MinH, MinM, MaxH, MaxM, SH, SM, EH, 
     minutes_to_time(SlotStart, SH, SM),
     minutes_to_time(SlotEnd, EH, EM).
 
-%% sort_options(+Options, -Sorted)
 sort_options(Options, Sorted) :-
     map_list_to_pairs(option_cost, Options, Pairs),
     keysort(Pairs, SortedPairs),
@@ -648,7 +730,6 @@ sort_options(Options, Sorted) :-
 
 option_cost(option(_, _, Cost, _), Cost).
 
-%% take_n(+N, +List, -FirstN)
 take_n(_, [], []) :- !.
 take_n(0, _, []) :- !.
 take_n(N, [H|T], [H|Rest]) :-
